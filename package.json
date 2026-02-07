@@ -1,0 +1,63 @@
+{
+  "name": "@quicknode/hypercore-cli",
+  "version": "0.1.0",
+  "description": "Developer-friendly CLI for streaming HyperCore datasets from Quicknode",
+  "license": "MIT",
+  "author": "Quicknode",
+  "homepage": "https://github.com/quiknode-labs/hypercore-cli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quiknode-labs/hypercore-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/quiknode-labs/hypercore-cli/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "hypercore-cli": "./bin/hypercore-cli.js"
+  },
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm -s build && node --test tests/**/*.test.mjs",
+    "test:watch": "node --test --watch tests/**/*.test.mjs",
+    "test:socket": "ENABLE_SOCKET_TESTS=1 node --test tests/integration/stream-runtime-reconnect.test.mjs",
+    "perf:smoke": "pnpm -s build && node scripts/perf-smoke.mjs",
+    "pack:dry-run": "npm pack --dry-run --cache \"${TMPDIR:-/tmp}/hypercore-cli-npm-cache\""
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "commander": "^14.0.2",
+    "keytar": "^7.9.0",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "keytar"
+    ]
+  },
+  "packageManager": "pnpm@10.24.0"
+}
