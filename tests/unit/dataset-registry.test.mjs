@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  getDatasetDefinition,
+  getDatasetNames,
+  streamNameMatchesDataset,
+} from '../../dist/src/datasets/registry.js';
+
+test('dataset registry exposes phase 2 dataset list', () => {
+  const names = getDatasetNames();
+  assert.deepEqual(names, ['orders', 'trades', 'events', 'book_updates', 'twap']);
+});
+
+test('stream alias matching accepts hl.book for book_updates', () => {
+  assert.equal(streamNameMatchesDataset('hl.book', 'book_updates'), true);
+  assert.equal(streamNameMatchesDataset('book_updates', 'book_updates'), true);
+  assert.equal(streamNameMatchesDataset('hl.twap', 'book_updates'), false);
+});
+
+test('book_updates uses JSON-RPC backfill stream book', () => {
+  const definition = getDatasetDefinition('book_updates');
+  assert.equal(definition.backfillStream, 'book');
+});
