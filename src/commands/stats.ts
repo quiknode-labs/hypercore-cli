@@ -10,7 +10,7 @@ import type { NormalizedEvent } from '../types/stream';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
-import { deriveEndpointUrls, redactSensitiveText } from '../utils/url';
+import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
 
 const DATASETS = getDatasetNames();
 
@@ -78,6 +78,12 @@ class LiveStats {
         increment(this.coin, event.coin);
         increment(this.primary, event.status);
         return;
+      case 'writer_actions':
+        increment(this.primary, event.actionType);
+        if (event.token) {
+          increment(this.coin, event.token);
+        }
+        return;
     }
   }
 
@@ -121,7 +127,7 @@ export function registerStatsCommand(program: Command): void {
     .option('--progress <mode>', 'Progress output mode: text, json', 'text')
     .option(
       '--endpoint <endpoint>',
-      'Quicknode endpoint override (recommended full WSS URL ending with /hypercore/ws)',
+      `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
@@ -221,6 +227,7 @@ function writeSnapshot(stats: LiveStats, mode: ProgressMode): StatsSnapshot {
 function renderSnapshotText(stats: LiveStats, snapshot: StatsSnapshot): string {
   const runtime = formatDuration(snapshot.runtimeSeconds);
   const primaryLabel = primaryBucketLabel(stats.dataset);
+  const secondaryLabel = secondaryBucketLabel(stats.dataset);
 
   const lines = [
     `Stats (${stats.dataset})`,
@@ -231,11 +238,25 @@ function renderSnapshotText(stats: LiveStats, snapshot: StatsSnapshot): string {
     ...renderCounts(snapshot.primary),
   ];
 
-  if (snapshot.coin.length > 0) {
-    lines.push('', 'By coin:', ...renderCounts(snapshot.coin));
+  if (snapshot.coin.length > 0 && secondaryLabel) {
+    lines.push('', secondaryLabel, ...renderCounts(snapshot.coin));
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+function secondaryBucketLabel(dataset: DatasetName): string | null {
+  switch (dataset) {
+    case 'orders':
+    case 'trades':
+    case 'book_updates':
+    case 'twap':
+      return 'By coin:';
+    case 'writer_actions':
+      return 'By token:';
+    case 'events':
+      return null;
+  }
 }
 
 function renderCounts(items: Array<{ key: string; count: number }>): string[] {
@@ -303,6 +324,8 @@ function primaryBucketLabel(dataset: DatasetName): string {
       return 'By diff type';
     case 'twap':
       return 'By status';
+    case 'writer_actions':
+      return 'By action type';
   }
 }
 

@@ -1,4 +1,10 @@
-export type DatasetName = 'orders' | 'trades' | 'events' | 'book_updates' | 'twap';
+export type DatasetName =
+  | 'orders'
+  | 'trades'
+  | 'events'
+  | 'book_updates'
+  | 'twap'
+  | 'writer_actions';
 export type OutputFormat = 'console' | 'json' | 'csv' | 'sqlite';
 export type ProgressMode = 'text' | 'json';
 

@@ -8,11 +8,31 @@ export interface PromptAdapter {
 class ReadlinePromptAdapter implements PromptAdapter {
   async ask(question: string, options?: { secret?: boolean }): Promise<string> {
     const rl = createInterface({ input, output, terminal: true });
+    const maskedInterface = rl as typeof rl & {
+      _writeToOutput?: (chunk: string) => void;
+    };
+    const originalWriteToOutput = maskedInterface._writeToOutput;
+
     try {
-      const prompt = options?.secret ? `${question}` : question;
-      const answer = await rl.question(prompt);
+      if (options?.secret) {
+        // Keep secret input hidden while preserving the prompt text.
+        maskedInterface._writeToOutput = (chunk: string): void => {
+          if (chunk.includes(question)) {
+            output.write(chunk);
+          }
+        };
+      }
+
+      const answer = await rl.question(question);
+      if (options?.secret) {
+        output.write('\n');
+      }
+
       return answer.trim();
     } finally {
+      if (originalWriteToOutput) {
+        maskedInterface._writeToOutput = originalWriteToOutput;
+      }
       rl.close();
     }
   }

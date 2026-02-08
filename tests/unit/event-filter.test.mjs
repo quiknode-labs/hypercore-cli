@@ -76,3 +76,27 @@ test('createEventFilter rejects events missing a requested field', () => {
 
   assert.equal(matcher(event), false);
 });
+
+test('createEventFilter matches writer_actions action type and token fields', () => {
+  const matcher = createEventFilter({ type: ['SystemSpotSendAction'], token: ['124'] });
+  const event = {
+    ...baseEnvelope('writer_actions'),
+    user: '0xabc',
+    nonce: 1,
+    evmTxHash: null,
+    type: 'SystemSpotSendAction',
+    actionType: 'SystemSpotSendAction',
+    destination: '0xdest',
+    token: '124',
+    wei: '100',
+    action: {
+      type: 'SystemSpotSendAction',
+      destination: '0xdest',
+      token: '124',
+      wei: '100',
+    },
+    eventTime: null,
+  };
+
+  assert.equal(matcher(event), true);
+});

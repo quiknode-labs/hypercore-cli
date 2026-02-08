@@ -5,6 +5,7 @@ import type {
   NormalizedSystemEvent,
   NormalizedTradeEvent,
   NormalizedTwapEvent,
+  NormalizedWriterActionEvent,
 } from '../types/stream';
 import type { OutputWriter, WriterInitContext } from './types';
 
@@ -38,6 +39,8 @@ function formatEvent(event: NormalizedEvent): string {
       return formatBookUpdateEvent(event);
     case 'twap':
       return formatTwapEvent(event);
+    case 'writer_actions':
+      return formatWriterActionEvent(event);
     default:
       return JSON.stringify(event);
   }
@@ -63,4 +66,8 @@ function formatBookUpdateEvent(event: NormalizedBookUpdateEvent): string {
 
 function formatTwapEvent(event: NormalizedTwapEvent): string {
   return `[${event.blockNumber}] TWAP ${event.status.toUpperCase()} id=${event.twapId} ${event.coin} ${event.side} ${event.size} executed=${event.executedSize ?? '0.0'}`;
+}
+
+function formatWriterActionEvent(event: NormalizedWriterActionEvent): string {
+  return `[${event.blockNumber}] WRITER_ACTIONS ${event.actionType} user=${event.user} token=${event.token ?? '-'} destination=${event.destination ?? '-'} wei=${event.wei ?? '-'}`;
 }

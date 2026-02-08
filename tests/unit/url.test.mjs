@@ -6,6 +6,7 @@ import {
   extractTokenFromEndpoint,
   redactEndpointUrl,
   redactSensitiveText,
+  sanitizeEndpointForStorage,
 } from '../../dist/src/utils/url.js';
 
 test('deriveEndpointUrls supports full Quicknode WSS hypercore endpoint', () => {
@@ -61,4 +62,17 @@ test('redactSensitiveText masks URLs, token query params, and explicit token val
   assert.equal(redacted.includes('abc123'), false);
   assert.equal(redacted.includes('REDACTED'), true);
   assert.match(redacted, /token=REDACTED/);
+});
+
+test('sanitizeEndpointForStorage removes token path from full WSS endpoint', () => {
+  const sanitized = sanitizeEndpointForStorage(
+    'wss://demo.hype-mainnet.quiknode.pro/abc123/hypercore/ws',
+  );
+
+  assert.equal(sanitized, 'wss://demo.hype-mainnet.quiknode.pro');
+});
+
+test('sanitizeEndpointForStorage keeps host-only endpoint unchanged', () => {
+  const sanitized = sanitizeEndpointForStorage('demo.hype-mainnet.quiknode.pro');
+  assert.equal(sanitized, 'demo.hype-mainnet.quiknode.pro');
 });

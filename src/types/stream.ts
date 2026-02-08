@@ -97,12 +97,32 @@ export interface NormalizedTwapEvent extends StreamEnvelopeBase {
   eventTime: string | null;
 }
 
+export interface NormalizedWriterActionEvent extends StreamEnvelopeBase {
+  stream: 'writer_actions';
+  user: string;
+  nonce: number | null;
+  evmTxHash: string | null;
+  type: string;
+  actionType: string;
+  destination: string | null;
+  token: string | null;
+  wei: string | null;
+  action: {
+    type: string;
+    destination: string | null;
+    token: string | null;
+    wei: string | null;
+  };
+  eventTime: string | null;
+}
+
 export type NormalizedEvent =
   | NormalizedOrderEvent
   | NormalizedTradeEvent
   | NormalizedSystemEvent
   | NormalizedBookUpdateEvent
-  | NormalizedTwapEvent;
+  | NormalizedTwapEvent
+  | NormalizedWriterActionEvent;
 
 export interface StreamProcessorBlockFetcher {
   fetchBatchBlocks(stream: DatasetName, from: number, to: number): Promise<RawStreamBlock[]>;

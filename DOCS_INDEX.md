@@ -34,6 +34,7 @@ Quick reference guide to all documentation in the @quicknode/hypercore-cli proje
 - **[Events Dataset](docs/datasets/events-dataset.md)** - 6 event types + 15 LedgerUpdate subtypes
 - **[Book Updates Dataset](docs/datasets/book-updates-dataset.md)** - Level 2 order book changes
 - **[TWAP Dataset](docs/datasets/twap-dataset.md)** - TWAP order execution tracking
+- **[Writer Actions Dataset](docs/datasets/writer-actions-dataset.md)** - System writer actions and bridge operations
 - **[Blocks Dataset](docs/datasets/blocks-dataset.md)** - Raw L1 transactions (gRPC only, 34 action types)
 
 ## Implementation Reference
@@ -66,7 +67,8 @@ src/
 │   ├── trades.ts                 # Trades dataset handler
 │   ├── events.ts                 # Events dataset handler
 │   ├── book-updates.ts           # Book updates dataset handler
-│   └── twap.ts                   # TWAP dataset handler
+│   ├── twap.ts                   # TWAP dataset handler
+│   └── writer-actions.ts         # Writer actions dataset handler
 ├── outputs/
 │   ├── console.ts                # Pretty terminal output
 │   ├── jsonl.ts                  # JSON lines output

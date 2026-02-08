@@ -25,61 +25,39 @@ $ hypercore-cli
 
 ## Credential Management
 
-The CLI needs a Quicknode HyperCore gRPC endpoint and API token. Credentials are resolved in this priority order:
+The CLI needs a Quicknode Hypercore endpoint and API token. Credentials are resolved in this priority order:
 
 ### 1. CLI Flags (Highest Priority)
 ```bash
 $ hypercore-cli stream \
-  --endpoint your-endpoint.grpc.quiknode.pro:443 \
+  --endpoint wss://YOUR_ENDPOINT_NAME.hype-mainnet.quiknode.pro/YOUR_TOKEN/hypercore/ws \
   --token your-api-token \
   --dataset orders
 ```
 
 ### 2. Environment Variables
 ```bash
-export QUICKNODE_ENDPOINT="your-endpoint.grpc.quiknode.pro:443"
+export QUICKNODE_ENDPOINT="wss://YOUR_ENDPOINT_NAME.hype-mainnet.quiknode.pro/YOUR_TOKEN/hypercore/ws"
 export QUICKNODE_TOKEN="your-api-token"
 
 $ hypercore-cli stream --dataset orders
 ```
 
-### 3. Config File
-Stored at `~/.hypercore-cli/config.json`:
-```json
-{
-  "endpoint": "your-endpoint.grpc.quiknode.pro:443",
-  "token": "your-api-token"
-}
-```
+### 3. Saved Config + Token Store
+- Endpoint is stored in `~/.hypercore-cli/config.json`
+- Token is stored in OS keychain when available
+- If keychain backend is unavailable, token is stored in `~/.hypercore-cli/token` with `0600` permissions
 
 ### 4. Interactive Prompt (Fallback)
-If no credentials found, the CLI prompts:
-```
-⚠️  No Quicknode credentials found!
-
-? Enter your Quicknode gRPC endpoint:
-  (Get one at https://quicknode.com/chains/hl)
-
-? Enter your API token:
-
-? Save credentials for future use? (Y/n)
-```
+If no credentials are found, the CLI prompts for endpoint/token.
 
 ### Config Command
 ```bash
-# Set up or update credentials
+# Set up or update credentials (with onboarding hints + endpoint example)
 $ hypercore-cli config
 
-? Quicknode gRPC endpoint: your-endpoint.grpc.quiknode.pro:443
-? API token: ********
-? Save credentials? Yes
-
-✅ Saved to ~/.hypercore-cli/config.json
-
-# View current config (token masked)
+# View current config (endpoint redacted, token masked)
 $ hypercore-cli config --show
-Endpoint: your-endpoint.grpc.quiknode.pro:443
-Token: ****...****
 
 # Clear saved credentials
 $ hypercore-cli config --clear

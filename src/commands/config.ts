@@ -1,10 +1,23 @@
 import { Command } from 'commander';
 
-import { isKeychainAvailable, saveToken, clearSavedToken, getSavedToken } from '../config/keychain';
+import {
+  clearSavedToken,
+  getPreferredTokenStorageBackend,
+  getSavedToken,
+  getSavedTokenStorageBackend,
+  getTokenFilePath,
+  isKeychainAvailable,
+  saveToken,
+} from '../config/keychain';
 import { getConfigPath, readSavedConfig, writeSavedConfig, clearSavedConfig } from '../config/storage';
 import { maskToken } from '../config/credentials';
 import { promptAdapter } from '../utils/prompt';
-import { extractTokenFromEndpoint } from '../utils/url';
+import {
+  extractTokenFromEndpoint,
+  QUICKNODE_WSS_EXAMPLE,
+  redactEndpointUrl,
+  sanitizeEndpointForStorage,
+} from '../utils/url';
 
 interface ConfigOptions {
   show?: boolean;
@@ -28,16 +41,33 @@ export function registerConfigCommand(program: Command): void {
       if (options.show) {
         const saved = await readSavedConfig();
         const token = await getSavedToken();
+        const keychainAvailable = await isKeychainAvailable();
+        const preferredBackend = await getPreferredTokenStorageBackend();
+        const savedBackend = await getSavedTokenStorageBackend();
+        const endpointDisplay = saved.endpoint ? redactEndpointUrl(saved.endpoint) : '(not set)';
+
         process.stdout.write(`Config path: ${getConfigPath()}\n`);
-        process.stdout.write(`Endpoint: ${saved.endpoint ?? '(not set)'}\n`);
+        process.stdout.write(`Endpoint: ${endpointDisplay}\n`);
         process.stdout.write(`Token: ${maskToken(token)}\n`);
-        process.stdout.write(`Keychain available: ${String(await isKeychainAvailable())}\n`);
+        process.stdout.write(`Keychain available: ${String(keychainAvailable)}\n`);
+        process.stdout.write(`Token storage preference: ${preferredBackend}\n`);
+        process.stdout.write(`Token storage in use: ${savedBackend}\n`);
+        if (savedBackend === 'file') {
+          process.stdout.write(`Token file: ${getTokenFilePath()} (permissions 600)\n`);
+        }
         return;
       }
 
-      const endpoint = await promptAdapter.ask(
-        'Quicknode endpoint (recommended full WSS URL ending with /hypercore/ws): ',
-      );
+      process.stdout.write('Quicknode onboarding:\n');
+      process.stdout.write('1) Create or sign in to your Quicknode account.\n');
+      process.stdout.write('2) Create a Hyperliquid endpoint.\n');
+      process.stdout.write('3) Select the WSS endpoint and copy the Hypercore URL.\n');
+      process.stdout.write(`Example: ${QUICKNODE_WSS_EXAMPLE}\n`);
+      process.stdout.write('Tip: You can also paste just the endpoint host and enter token separately.\n');
+
+      const endpoint = await promptAdapter.ask('Quicknode endpoint (host or full WSS URL): ', {
+        secret: true,
+      });
       if (!endpoint) {
         throw new Error('Endpoint is required');
       }
@@ -50,9 +80,17 @@ export function registerConfigCommand(program: Command): void {
         throw new Error('Token is required');
       }
 
-      await writeSavedConfig({ endpoint });
+      await writeSavedConfig({ endpoint: sanitizeEndpointForStorage(endpoint) });
       await saveToken(token);
 
-      process.stdout.write(`Saved endpoint to ${getConfigPath()} and token to system keychain.\n`);
+      const tokenStorageBackend = await getSavedTokenStorageBackend();
+      if (tokenStorageBackend === 'keychain') {
+        process.stdout.write(`Saved endpoint to ${getConfigPath()} and token to system keychain.\n`);
+        return;
+      }
+
+      process.stdout.write(
+        `Saved endpoint to ${getConfigPath()} and token to ${getTokenFilePath()} (permissions 600).\n`,
+      );
     });
 }

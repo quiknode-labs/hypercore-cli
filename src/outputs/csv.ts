@@ -81,6 +81,20 @@ const HEADERS: Record<DatasetName, string[]> = {
     'state_timestamp',
     'event_time',
   ],
+  writer_actions: [
+    'event_key',
+    'block_number',
+    'block_time',
+    'local_time',
+    'user',
+    'nonce',
+    'evm_tx_hash',
+    'action_type',
+    'destination',
+    'token',
+    'wei',
+    'event_time',
+  ],
 };
 
 export class CsvWriter implements OutputWriter {
@@ -190,6 +204,24 @@ export class CsvWriter implements OutputWriter {
             event.reduceOnly,
             event.randomize,
             event.stateTimestamp,
+            event.eventTime,
+          ])}\n`,
+        );
+        return;
+      case 'writer_actions':
+        process.stdout.write(
+          `${toCsvLine([
+            event.eventKey,
+            event.blockNumber,
+            event.blockTime,
+            event.localTime,
+            event.user,
+            event.nonce,
+            event.evmTxHash,
+            event.actionType,
+            event.destination,
+            event.token,
+            event.wei,
             event.eventTime,
           ])}\n`,
         );

@@ -5,6 +5,8 @@ export interface EndpointUrls {
 
 const REDACTED_VALUE = 'REDACTED';
 const SENSITIVE_QUERY_KEY_PATTERN = /(token|api[_-]?key|authorization)/i;
+export const QUICKNODE_WSS_EXAMPLE =
+  'wss://YOUR_ENDPOINT_NAME.hype-mainnet.quiknode.pro/YOUR_TOKEN/hypercore/ws';
 
 export function deriveEndpointUrls(endpointInput: string, tokenInput?: string): EndpointUrls {
   const endpoint = endpointInput.trim();
@@ -156,6 +158,35 @@ export function redactSensitiveText(input: string, options?: { token?: string | 
   return redacted;
 }
 
+export function sanitizeEndpointForStorage(endpointInput: string): string {
+  const endpoint = endpointInput.trim();
+  if (!endpoint) {
+    return endpointInput;
+  }
+
+  if (looksLikeUrl(endpoint)) {
+    try {
+      const parsed = new URL(endpoint);
+      parsed.search = '';
+      parsed.hash = '';
+      if (extractTokenFromPath(parsed.pathname)) {
+        return `${parsed.protocol}//${parsed.host}`;
+      }
+      return trimTrailingSlash(parsed.toString());
+    } catch {
+      return endpoint;
+    }
+  }
+
+  const normalized = endpoint.replace(/^\/+|\/+$/g, '');
+  const segments = normalized.split('/').filter(Boolean);
+  const hypercoreIndex = segments.findIndex((segment) => segment === 'hypercore');
+  if (hypercoreIndex > 1) {
+    return segments[0] ?? endpoint;
+  }
+  return endpoint;
+}
+
 function looksLikeUrl(value: string): boolean {
   return /^(wss?|https?):\/\//i.test(value);
 }
@@ -212,4 +243,8 @@ function redactSensitiveSearchParams(searchParams: URLSearchParams): void {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/$/, '');
 }

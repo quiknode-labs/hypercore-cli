@@ -477,7 +477,7 @@ Implementation notes:
 **Mitigation:**
 - Batch requests (`--batch-size`, max 100) and progress logging
 - `--limit` support for bounded runs
-- Keep gRPC/`blocks`/`writer_actions` defer unchanged
+- Keep gRPC/`blocks` defer unchanged
 
 ---
 
@@ -580,6 +580,45 @@ Live reconnect testing showed repeated overlapping backfill ranges being trigger
 **Mitigation:**
 - Keep normalization/output path efficient
 - Maintain batch backfill fetch size to control recovery latency
+
+---
+
+## ADR-016: Enable `writer_actions` dataset on WebSocket + JSON-RPC pipeline
+
+**Date:** 2026-02-07
+**Status:** ✅ Accepted
+**Decision Makers:** Publish-readiness scope expansion
+
+### Context
+
+`writer_actions` was previously deferred, but it is available on WebSocket and JSON-RPC (`hl_subscribe`, `hl_getBatchBlocks`) without requiring gRPC.
+
+Need:
+- keep `blocks` + gRPC transport deferred
+- add `writer_actions` with the same reliability/output/test contracts as existing datasets
+
+### Decision
+
+Add full `writer_actions` support to the existing pipeline:
+- dataset registry + stream/backfill mapping
+- normalizer + typed normalized event
+- outputs (`console`, `json`, `csv`, `sqlite`)
+- stream/stats/backfill compatibility
+- tests and docs updates
+
+### Consequences
+
+**Positive:**
+- ✅ Expands supported datasets without protocol-scope growth
+- ✅ Reuses proven runtime/backfill/output architecture
+- ✅ Keeps defer surface focused on gRPC + `blocks`
+
+**Negative:**
+- ⚠️ Additional schema/output/test maintenance burden for one more dataset
+
+**Mitigation:**
+- Keep `writer_actions` integration aligned with central registry + shared output abstractions
+- Add dedicated normalizer/registry/filter tests to reduce regression risk
 
 ---
 

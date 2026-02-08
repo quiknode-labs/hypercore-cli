@@ -8,13 +8,13 @@ Status: Milestones A, B, and C delivered
 Extend Phase 2 with historical ingestion and operational hardening while preserving existing defer decisions:
 - keep `blocks` deferred (gRPC-only)
 - keep gRPC transport deferred
-- keep `writer_actions` deferred
+- `writer_actions` now delivered in post-Phase3 expansion
 
 ## 2) Milestones
 
 ### Milestone A (Delivered): Historical backfill command
 - Add `backfill` command using JSON-RPC `hl_getBatchBlocks`
-- Support datasets: `orders|trades|events|book_updates|twap`
+- Support datasets: `orders|trades|events|book_updates|twap|writer_actions`
 - Reuse existing normalizers + output writers (`console|json|csv|sqlite`)
 - Add client-side normalized-event filters for backfill
 - Add `--limit` and batched fetch behavior for deterministic runs
@@ -46,7 +46,7 @@ New command:
 
 ```bash
 hypercore-cli backfill \
-  --dataset <orders|trades|events|book_updates|twap> \
+  --dataset <orders|trades|events|book_updates|twap|writer_actions> \
   --from <start_block_inclusive> \
   --to <end_block_inclusive> \
   [--batch-size <1-100>] \

@@ -32,11 +32,11 @@
 - [x] Reconnect gap-check/backfill trigger is serialized to prevent overlapping duplicate backfill runs
 - [x] Added runtime-level reconnect integration test with local mock WebSocket server + JSON-RPC backfill stub
 - [x] Added end-of-run summaries for `stream`, `backfill`, and `stats`
+- [x] Added `writer_actions` dataset support across stream/backfill/sample/stats and all output writers
 
 ## Explicit Deferred Items
 - [ ] gRPC transport integration
 - [ ] `blocks` dataset support (gRPC-only)
-- [ ] `writer_actions` dataset support
 
 ## Validation in Current Environment
 - `pnpm typecheck` passes.
@@ -52,3 +52,15 @@
 - [x] Added explicit socket-test enabled path via `pnpm test:socket` (`ENABLE_SOCKET_TESTS=1`)
 - [x] Added sqlite perf smoke script (`pnpm perf:smoke`) for high-event writer-path checks
 - [x] Added release checklist documentation (`RELEASE.md`) and linked it in docs index/README
+
+## Post-Phase3 Dataset Expansion
+- [x] Implemented `writer_actions` normalizer + dataset registry mapping (`writer_actions` stream alias/backfill stream)
+- [x] Added `writer_actions` output support for console/csv/sqlite/json
+- [x] Added test coverage for `writer_actions` normalizer, registry, JSON-RPC mapping, and filter builder behavior
+- [x] Kept explicit defer unchanged for `gRPC` transport and `blocks` dataset
+
+## Config UX/Security Follow-up
+- [x] Added onboarding guidance + concrete WSS example text in credential prompts
+- [x] Updated config display to redact endpoint token path and show masked token storage metadata
+- [x] Added automatic token storage fallback to local file (`~/.hypercore-cli/token`, mode `0600`) when keychain backend is unavailable
+- [x] Secret prompts now suppress terminal echo for endpoint/token input

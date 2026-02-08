@@ -6,6 +6,7 @@ import type {
   NormalizedSystemEvent,
   NormalizedTradeEvent,
   NormalizedTwapEvent,
+  NormalizedWriterActionEvent,
 } from '../types/stream';
 import type { OutputWriter, WriterInitContext } from './types';
 
@@ -33,6 +34,7 @@ export class SqliteWriter implements OutputWriter {
   private eventInsert: BetterSqliteStatement | null = null;
   private bookUpdateInsert: BetterSqliteStatement | null = null;
   private twapInsert: BetterSqliteStatement | null = null;
+  private writerActionInsert: BetterSqliteStatement | null = null;
 
   constructor(dbPath: string) {
     this.dbPath = dbPath;
@@ -109,6 +111,18 @@ export class SqliteWriter implements OutputWriter {
         @eventTime, @rawJson
       )
     `);
+
+    this.writerActionInsert = this.db.prepare(`
+      INSERT OR IGNORE INTO writer_actions (
+        event_key, block_number, block_time, local_time, user_address,
+        nonce, evm_tx_hash, action_type, destination, token, wei,
+        event_time, raw_json
+      ) VALUES (
+        @eventKey, @blockNumber, @blockTime, @localTime, @user,
+        @nonce, @evmTxHash, @actionType, @destination, @token, @wei,
+        @eventTime, @rawJson
+      )
+    `);
   }
 
   async write(event: NormalizedEvent): Promise<void> {
@@ -131,6 +145,9 @@ export class SqliteWriter implements OutputWriter {
         return;
       case 'twap':
         this.twapInsert?.run(twapRow(event));
+        return;
+      case 'writer_actions':
+        this.writerActionInsert?.run(writerActionRow(event));
         return;
     }
   }
@@ -272,6 +289,28 @@ export class SqliteWriter implements OutputWriter {
       CREATE INDEX IF NOT EXISTS idx_twap_status ON twap(status);
       CREATE INDEX IF NOT EXISTS idx_twap_coin ON twap(coin);
       CREATE INDEX IF NOT EXISTS idx_twap_id ON twap(twap_id);
+
+      CREATE TABLE IF NOT EXISTS writer_actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_key TEXT NOT NULL UNIQUE,
+        block_number INTEGER NOT NULL,
+        block_time TEXT NOT NULL,
+        local_time TEXT NOT NULL,
+        user_address TEXT NOT NULL,
+        nonce INTEGER,
+        evm_tx_hash TEXT,
+        action_type TEXT NOT NULL,
+        destination TEXT,
+        token TEXT,
+        wei TEXT,
+        event_time TEXT,
+        raw_json TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_writer_actions_user ON writer_actions(user_address);
+      CREATE INDEX IF NOT EXISTS idx_writer_actions_type ON writer_actions(action_type);
+      CREATE INDEX IF NOT EXISTS idx_writer_actions_token ON writer_actions(token);
     `);
   }
 }
@@ -309,5 +348,11 @@ function twapRow(event: NormalizedTwapEvent): Record<string, unknown> {
     ...event,
     reduceOnly: event.reduceOnly == null ? null : Number(event.reduceOnly),
     randomize: event.randomize == null ? null : Number(event.randomize),
+  };
+}
+
+function writerActionRow(event: NormalizedWriterActionEvent): Record<string, unknown> {
+  return {
+    ...event,
   };
 }

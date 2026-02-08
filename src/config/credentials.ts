@@ -2,7 +2,10 @@ import { getSavedToken } from './keychain';
 import { readSavedConfig, type SavedConfig } from './storage';
 import { promptAdapter, type PromptAdapter } from '../utils/prompt';
 import type { ResolvedCredentials } from '../types/common';
-import { extractTokenFromEndpoint } from '../utils/url';
+import { extractTokenFromEndpoint, QUICKNODE_WSS_EXAMPLE } from '../utils/url';
+
+const ENDPOINT_PROMPT =
+  `Quicknode endpoint (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE}): `;
 
 export interface ResolveCredentialInput {
   endpointFlag?: string;
@@ -63,9 +66,7 @@ export async function resolveCredentials(
 
   if (input.promptOnMissing !== false) {
     if (!endpoint) {
-      endpoint = await prompt.ask(
-        'Quicknode endpoint (recommended full WSS URL ending with /hypercore/ws): ',
-      );
+      endpoint = await prompt.ask(ENDPOINT_PROMPT, { secret: true });
       endpointSource = 'prompt';
     }
     if (!token) {

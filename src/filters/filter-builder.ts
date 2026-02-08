@@ -13,7 +13,7 @@ export interface BuildFilterInput {
 export function buildFilters(input: BuildFilterInput): FilterMap {
   const filters: FilterMap = {};
 
-  appendCsv(filters, 'coin', input.tokens);
+  appendCsv(filters, input.dataset === 'writer_actions' ? 'token' : 'coin', input.tokens);
   appendCsv(filters, 'user', input.users);
 
   if (input.dataset === 'orders') {

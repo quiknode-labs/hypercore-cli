@@ -10,7 +10,7 @@ import type { DatasetName, OutputFormat } from '../types/common';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
-import { deriveEndpointUrls, redactSensitiveText } from '../utils/url';
+import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
 
 const DATASETS = getDatasetNames();
 const OUTPUT_FORMATS: OutputFormat[] = ['console', 'json', 'csv', 'sqlite'];
@@ -45,7 +45,7 @@ export function registerStreamCommand(program: Command): void {
     .option('--progress <mode>', 'Progress log mode: text, json', 'text')
     .option(
       '--endpoint <endpoint>',
-      'Quicknode endpoint override (recommended full WSS URL ending with /hypercore/ws)',
+      `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])

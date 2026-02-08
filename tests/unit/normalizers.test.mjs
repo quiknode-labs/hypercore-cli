@@ -4,14 +4,15 @@ import assert from 'node:assert/strict';
 let modules = null;
 
 try {
-  const [orders, trades, events, bookUpdates, twap] = await Promise.all([
+  const [orders, trades, events, bookUpdates, twap, writerActions] = await Promise.all([
     import('../../dist/src/datasets/orders.js'),
     import('../../dist/src/datasets/trades.js'),
     import('../../dist/src/datasets/events.js'),
     import('../../dist/src/datasets/book-updates.js'),
     import('../../dist/src/datasets/twap.js'),
+    import('../../dist/src/datasets/writer-actions.js'),
   ]);
-  modules = { orders, trades, events, bookUpdates, twap };
+  modules = { orders, trades, events, bookUpdates, twap, writerActions };
 } catch {
   modules = null;
 }
@@ -111,5 +112,34 @@ if (!modules) {
     assert.equal(rows[0].twapId, 123);
     assert.equal(rows[0].status, 'activated');
     assert.equal(rows[0].coin, 'ETH');
+  });
+
+  test('normalizeWriterActionsBlock parses action fields', () => {
+    const rows = modules.writerActions.normalizeWriterActionsBlock({
+      stream: 'writer_actions',
+      blockNumber: 15,
+      blockTime: '2026-01-01T00:00:00.000Z',
+      localTime: '2026-01-01T00:00:00.100Z',
+      events: [
+        {
+          time: '2026-01-01T00:00:00.000Z',
+          user: '0xwriter',
+          nonce: 77,
+          evm_tx_hash: '0xevm',
+          action: {
+            type: 'SystemSpotSendAction',
+            destination: '0xdest',
+            token: 124,
+            wei: '250000000000000000',
+          },
+        },
+      ],
+    });
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].type, 'SystemSpotSendAction');
+    assert.equal(rows[0].actionType, 'SystemSpotSendAction');
+    assert.equal(rows[0].token, '124');
+    assert.equal(rows[0].destination, '0xdest');
   });
 }

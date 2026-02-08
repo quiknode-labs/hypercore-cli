@@ -136,9 +136,39 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
       },
     },
   },
+  writer_actions: {
+    name: 'writer_actions',
+    displayName: 'Writer Actions',
+    description: 'System writer actions and bridge operations',
+    volume: 'Low',
+    wsStreamType: 'writer_actions',
+    wsAliases: ['writer_actions', 'hl.writer_actions'],
+    backfillStream: 'writer_actions',
+    keyFields: [
+      'user',
+      'nonce',
+      'evm_tx_hash',
+      'action.type',
+      'action.destination',
+      'action.token',
+      'action.wei',
+    ],
+    sampleEvent: {
+      time: '2026-02-06T12:00:00.000000000',
+      user: '0x2001222233334444555566667777888899990000',
+      nonce: 8123,
+      evm_tx_hash: '0xddddeeeeffff1111222233334444555566667777888899990000aaaabbbbcccc',
+      action: {
+        type: 'SystemSpotSendAction',
+        destination: '0x9999222233334444555566667777888899990000',
+        token: 124,
+        wei: '250000000000000000',
+      },
+    },
+  },
 };
 
-const ORDER: DatasetName[] = ['orders', 'trades', 'events', 'book_updates', 'twap'];
+const ORDER: DatasetName[] = ['orders', 'trades', 'events', 'book_updates', 'twap', 'writer_actions'];
 
 export function getDatasetNames(): DatasetName[] {
   return [...ORDER];

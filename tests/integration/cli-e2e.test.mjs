@@ -2,14 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
 const CLI_PATH = path.join(process.cwd(), 'dist/src/index.js');
 
-function runCli(args) {
+function runCli(args, options = {}) {
   const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...(options.env ?? {}),
+    },
   });
 
   return {
@@ -18,6 +22,41 @@ function runCli(args) {
     stderr: result.stderr ?? '',
   };
 }
+
+test('config --show redacts endpoint token path', async () => {
+  const tempHome = await mkdtemp(path.join(os.tmpdir(), 'hypercore-cli-home-'));
+  const configDir = path.join(tempHome, '.hypercore-cli');
+  const configPath = path.join(configDir, 'config.json');
+
+  try {
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          endpoint: 'wss://demo.hype-mainnet.quiknode.pro/abc123/hypercore/ws',
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const result = runCli(['config', '--show'], {
+      env: {
+        HOME: tempHome,
+      },
+    });
+
+    assert.equal(result.status, 0);
+    assert.match(
+      result.stdout,
+      /Endpoint: wss:\/\/demo\.hype-mainnet\.quiknode\.pro\/REDACTED\/hypercore\/ws/,
+    );
+  } finally {
+    await rm(tempHome, { recursive: true, force: true });
+  }
+});
 
 test('query --sql returns table output for valid query', async (t) => {
   let sqlite = null;

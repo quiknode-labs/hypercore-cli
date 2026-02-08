@@ -5,6 +5,7 @@ import { normalizeEventsBlock } from './events';
 import { normalizeOrderBlock } from './orders';
 import { normalizeTradeBlock } from './trades';
 import { normalizeTwapBlock } from './twap';
+import { normalizeWriterActionsBlock } from './writer-actions';
 
 export type DatasetNormalizer = (block: RawStreamBlock) => NormalizedEvent[];
 
@@ -14,6 +15,7 @@ const NORMALIZERS: Record<DatasetName, DatasetNormalizer> = {
   events: normalizeEventsBlock,
   book_updates: normalizeBookUpdatesBlock,
   twap: normalizeTwapBlock,
+  writer_actions: normalizeWriterActionsBlock,
 };
 
 export function getNormalizer(dataset: DatasetName): DatasetNormalizer {

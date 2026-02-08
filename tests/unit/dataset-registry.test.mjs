@@ -9,7 +9,7 @@ import {
 
 test('dataset registry exposes phase 2 dataset list', () => {
   const names = getDatasetNames();
-  assert.deepEqual(names, ['orders', 'trades', 'events', 'book_updates', 'twap']);
+  assert.deepEqual(names, ['orders', 'trades', 'events', 'book_updates', 'twap', 'writer_actions']);
 });
 
 test('stream alias matching accepts hl.book for book_updates', () => {
@@ -21,4 +21,9 @@ test('stream alias matching accepts hl.book for book_updates', () => {
 test('book_updates uses JSON-RPC backfill stream book', () => {
   const definition = getDatasetDefinition('book_updates');
   assert.equal(definition.backfillStream, 'book');
+});
+
+test('writer_actions uses JSON-RPC backfill stream writer_actions', () => {
+  const definition = getDatasetDefinition('writer_actions');
+  assert.equal(definition.backfillStream, 'writer_actions');
 });
