@@ -103,6 +103,7 @@ test('backfill emits structured progress JSON and shutdown summary with redacted
         '100',
         '--output',
         'json',
+        '--stdout',
         '--progress',
         'json',
         '--endpoint',
@@ -112,13 +113,11 @@ test('backfill emits structured progress JSON and shutdown summary with redacted
 
     assert.equal(requests.length, 1);
     assert.equal(requests[0].method, 'hl_getBatchBlocks');
-    assert.deepEqual(requests[0].params, { stream: 'orderUpdates', from: 100, to: 100 });
+    assert.deepEqual(requests[0].params, { stream: 'orders', from: 100, to: 100 });
 
-    const eventLine = output.stdout
-      .trim()
-      .split('\n')
-      .find((line) => line.trim().startsWith('{'));
-    assert.ok(eventLine);
+    const jsonMatch = output.stdout.match(/(\{"eventKey":.+\})/);
+    assert.ok(jsonMatch, 'Expected JSON event in stdout');
+    const eventLine = jsonMatch[1];
     const event = JSON.parse(eventLine);
     assert.equal(event.stream, 'orders');
     assert.equal(event.coin, 'BTC');
@@ -136,7 +135,7 @@ test('backfill emits structured progress JSON and shutdown summary with redacted
 
     assert.ok(logs.some((entry) => entry.message.startsWith('Backfill done:')));
     assert.ok(logs.some((entry) => entry.command === 'backfill'));
-    assert.ok(output.stderr.includes('REDACTED/hypercore'));
+    assert.ok(output.stderr.includes('****/hypercore'));
     assert.equal(output.stderr.includes('abc123'), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));

@@ -43,14 +43,25 @@ test('extractTokenFromEndpoint pulls token from full WSS endpoint', () => {
   assert.equal(token, 'abc123');
 });
 
-test('redactEndpointUrl masks token segment in Hypercore endpoint URL', () => {
+test('redactEndpointUrl masks token and hostname in Hypercore endpoint URL', () => {
   const redacted = redactEndpointUrl(
     'wss://demo.hype-mainnet.quiknode.pro/abc123/hypercore/ws',
   );
 
   assert.equal(
     redacted,
-    'wss://demo.hype-mainnet.quiknode.pro/REDACTED/hypercore/ws',
+    'wss://****.hype-mainnet.quiknode.pro/****/hypercore/ws',
+  );
+});
+
+test('redactEndpointUrl partially masks long subdomains', () => {
+  const redacted = redactEndpointUrl(
+    'wss://winter-skilled-resonance.hype-mainnet.quiknode.pro/abc123/hypercore/ws',
+  );
+
+  assert.equal(
+    redacted,
+    'wss://win***nce.hype-mainnet.quiknode.pro/****/hypercore/ws',
   );
 });
 
@@ -60,8 +71,8 @@ test('redactSensitiveText masks URLs, token query params, and explicit token val
   const redacted = redactSensitiveText(source, { token: 'abc123' });
 
   assert.equal(redacted.includes('abc123'), false);
-  assert.equal(redacted.includes('REDACTED'), true);
-  assert.match(redacted, /token=REDACTED/);
+  assert.equal(redacted.includes('****'), true);
+  assert.match(redacted, /token=\*{4}/);
 });
 
 test('sanitizeEndpointForStorage removes token path from full WSS endpoint', () => {

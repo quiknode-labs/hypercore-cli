@@ -48,22 +48,22 @@ function renderDatasetList(datasets: DatasetDefinition[]): string {
     dataset.name,
     dataset.description,
     dataset.volume,
+    dataset.docsUrl,
   ]);
 
-  const headers = ['Dataset', 'Description', 'Volume'];
+  const headers = ['Dataset', 'Description', 'Volume', 'Docs'];
   const widths = headers.map((header, column) => {
     const rowWidth = rows.reduce((max, row) => Math.max(max, row[column].length), 0);
     return Math.max(header.length, rowWidth);
   });
 
   const divider = `+${widths.map((width) => '-'.repeat(width + 2)).join('+')}+`;
-  const headerLine =
-    `| ${headers[0].padEnd(widths[0])} | ${headers[1].padEnd(widths[1])} | ${headers[2].padEnd(widths[2])} |`;
+  const headerLine = `| ${headers.map((h, i) => h.padEnd(widths[i])).join(' | ')} |`;
 
   const body = rows
     .map(
       (row) =>
-        `| ${row[0].padEnd(widths[0])} | ${row[1].padEnd(widths[1])} | ${row[2].padEnd(widths[2])} |`,
+        `| ${row.map((cell, i) => cell.padEnd(widths[i])).join(' | ')} |`,
     )
     .join('\n');
 
@@ -87,6 +87,7 @@ function renderDatasetSample(dataset: DatasetDefinition): string {
     `${'='.repeat(dataset.displayName.length + dataset.name.length + 3)}`,
     dataset.description,
     `Estimated volume: ${dataset.volume}`,
+    `Docs: ${dataset.docsUrl}`,
     '',
     'Key fields:',
     keyFields,

@@ -4,6 +4,7 @@ export interface DatasetDefinition {
   name: DatasetName;
   displayName: string;
   description: string;
+  docsUrl: string;
   volume: 'Low' | 'Medium' | 'High' | 'Very High';
   wsStreamType: string;
   wsAliases: string[];
@@ -17,6 +18,7 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
     name: 'orders',
     displayName: 'Orders',
     description: 'Order lifecycle events',
+    docsUrl: 'https://www.quicknode.com/docs/hyperliquid/datasets/orders',
     volume: 'Very High',
     wsStreamType: 'orders',
     wsAliases: ['orders', 'hl.orders'],
@@ -43,6 +45,7 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
     name: 'trades',
     displayName: 'Trades',
     description: 'Executed fills with price and size',
+    docsUrl: 'https://www.quicknode.com/docs/hyperliquid/datasets/trades',
     volume: 'High',
     wsStreamType: 'trades',
     wsAliases: ['trades', 'hl.trades'],
@@ -69,6 +72,7 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
     name: 'events',
     displayName: 'Events',
     description: 'System events and balance updates',
+    docsUrl: 'https://www.quicknode.com/docs/hyperliquid/datasets/events',
     volume: 'Medium',
     wsStreamType: 'events',
     wsAliases: ['events', 'hl.events'],
@@ -91,6 +95,7 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
     name: 'book_updates',
     displayName: 'Book Updates',
     description: 'Level 2 order book updates',
+    docsUrl: 'https://www.quicknode.com/docs/hyperliquid/datasets/book-updates',
     volume: 'Very High',
     wsStreamType: 'book_updates',
     wsAliases: ['book_updates', 'book', 'hl.book_updates', 'hl.book'],
@@ -113,6 +118,7 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
     name: 'twap',
     displayName: 'TWAP',
     description: 'TWAP order status updates',
+    docsUrl: 'https://www.quicknode.com/docs/hyperliquid/datasets/twap',
     volume: 'Low',
     wsStreamType: 'twap',
     wsAliases: ['twap', 'hl.twap'],
@@ -140,6 +146,7 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
     name: 'writer_actions',
     displayName: 'Writer Actions',
     description: 'System writer actions and bridge operations',
+    docsUrl: 'https://www.quicknode.com/docs/hyperliquid/datasets/writer-actions',
     volume: 'Low',
     wsStreamType: 'writer_actions',
     wsAliases: ['writer_actions', 'hl.writer_actions'],

@@ -51,7 +51,7 @@ test('config --show redacts endpoint token path', async () => {
     assert.equal(result.status, 0);
     assert.match(
       result.stdout,
-      /Endpoint: wss:\/\/demo\.hype-mainnet\.quiknode\.pro\/REDACTED\/hypercore\/ws/,
+      /Endpoint: wss:\/\/\*{4}\.hype-mainnet\.quiknode\.pro\/\*{4}\/hypercore\/ws/,
     );
   } finally {
     await rm(tempHome, { recursive: true, force: true });

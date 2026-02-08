@@ -27,3 +27,12 @@ test('writer_actions uses JSON-RPC backfill stream writer_actions', () => {
   const definition = getDatasetDefinition('writer_actions');
   assert.equal(definition.backfillStream, 'writer_actions');
 });
+
+test('every dataset has a docsUrl', () => {
+  const names = getDatasetNames();
+  for (const name of names) {
+    const definition = getDatasetDefinition(name);
+    assert.ok(definition.docsUrl, `${name} should have a docsUrl`);
+    assert.ok(definition.docsUrl.startsWith('https://'), `${name} docsUrl should be HTTPS`);
+  }
+});

@@ -24,6 +24,7 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 | **Real-time streaming** | Subscribe to live WebSocket feeds for orders, trades, events, book updates, TWAP, and writer actions |
 | **Auto-reconnect + gap recovery** | Exponential backoff reconnection with automatic JSON-RPC backfill — zero data loss on network drops |
 | **Historical backfill** | Fetch any block range via JSON-RPC and export to JSON, CSV, or SQLite |
+| **Auto file output** | CSV and JSON outputs are automatically written to timestamped files — no manual naming needed |
 | **Built-in SQL query engine** | Interactive REPL and one-shot SQL against your local SQLite data |
 | **6 datasets** | `orders` · `trades` · `events` · `book_updates` · `twap` · `writer_actions` |
 | **4 output formats** | Pretty console, JSON lines, CSV, and SQLite persistence |
@@ -39,6 +40,8 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 
 - **Node.js** >= 20 (22 recommended)
 - A **Quicknode account** with a Hyperliquid endpoint ([sign up](https://www.quicknode.com/signup))
+
+> **Pricing:** HyperCore usage is billed through your Quicknode plan. See [Quicknode HyperCore pricing](https://www.quicknode.com/docs/hyperliquid/pricing) for details.
 
 ### Step 1 — Install
 
@@ -83,6 +86,16 @@ You should see real-time Hyperliquid trades printed to your terminal. That's it 
 
 ## Commands
 
+Every command supports `--help` to show all available flags and their default values:
+
+```bash
+hypercore-cli stream --help
+hypercore-cli backfill --help
+hypercore-cli stats --help
+hypercore-cli query --help
+hypercore-cli sample --help
+```
+
 ### `config` — Credential management
 
 ```bash
@@ -100,67 +113,106 @@ Credentials can also be provided via CLI flags (`--endpoint`, `--token`) or envi
 
 ### `sample` — Explore datasets before ingestion
 
-See what each dataset looks like before you commit to a full stream or backfill.
+See what each dataset looks like before you commit to a full stream or backfill. Includes documentation links, field descriptions, and sample payloads.
 
 ```bash
-hypercore-cli sample --list              # List all available datasets
+hypercore-cli sample --list              # List all datasets with docs links
 hypercore-cli sample --dataset orders    # Inspect orders payload structure
 hypercore-cli sample --dataset twap      # Inspect TWAP payload structure
 ```
 
 ### `stream` — Real-time WebSocket streaming
 
-Subscribe to live data with optional server-side filtering.
+Subscribe to live data with optional server-side filtering. Use `--help` to see all flags and defaults.
 
 ```bash
 # Stream all orders
 hypercore-cli stream --dataset orders
 
-# Filter by coins and user addresses
+# Filter by multiple coins and user addresses
 hypercore-cli stream --dataset trades --tokens BTC,ETH --users 0xabc...,0xdef...
 
-# Filter orders by status
+# Filter orders by status (orders dataset only)
 hypercore-cli stream --dataset orders --statuses open,filled
 
-# JSON lines output, capped at 50 events
+# JSON output to auto-generated file, capped at 50 events
 hypercore-cli stream --dataset book_updates --output json --limit 50
+
+# Force JSON output to stdout instead of file
+hypercore-cli stream --dataset trades --output json --limit 10 --stdout
 
 # Persist directly to SQLite
 hypercore-cli stream --dataset trades --output sqlite --db ./trades.db --limit 1000
 ```
 
+**Key flags:**
+
+| Flag | Description | Default |
+|---|---|---|
+| `--dataset` | Dataset to stream (see [Datasets](#datasets)) | _(prompted)_ |
+| `--tokens` | Filter by coins, e.g. `BTC,ETH` | _(none)_ |
+| `--users` | Filter by user addresses, e.g. `0xabc,0xdef` | _(none)_ |
+| `--statuses` | Filter by order status (orders only), e.g. `open,filled` | _(none)_ |
+| `--output` | Output format: `console`, `json`, `csv`, `sqlite` | `console` |
+| `--limit` | Stop after N events (0 = unlimited) | `0` |
+| `--stdout` | Write csv/json to stdout instead of auto-generated file | `false` |
+| `--db` | SQLite database path (required with `--output sqlite`) | — |
+
 If the connection drops, the CLI automatically reconnects with exponential backoff and backfills any missed blocks via JSON-RPC — no manual intervention needed.
 
 ### `backfill` — Historical block range ingestion
 
-Fetch past data via JSON-RPC. Useful for research, backtesting, or seeding a local database.
+Fetch past data via JSON-RPC. Useful for research, backtesting, or seeding a local database. Use `--help` to see all flags and defaults.
 
 ```bash
-# Export a block range as JSON
-hypercore-cli backfill --dataset orders --from 817824078 --to 817824178 --output json
+# Export a block range as JSON (auto-generates output file)
+hypercore-cli backfill --dataset orders --from 887643588 --to 887643688 --output json
 
-# Filter and pipe to CSV
-hypercore-cli backfill --dataset trades --from 817824078 --to 817824178 \
-  --tokens BTC,ETH --output csv > trades.csv
+# Filter and export to CSV
+hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
+  --tokens BTC,ETH --output csv
+
+# Force output to stdout for piping
+hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
+  --output csv --stdout > trades.csv
 
 # Ingest into SQLite
-hypercore-cli backfill --dataset events --from 817824078 --to 817824178 \
+hypercore-cli backfill --dataset events --from 887643588 --to 887643688 \
   --output sqlite --db ./events.db
 
-# Tune batch size and enable JSON progress for automation
-hypercore-cli backfill --dataset writer_actions --from 817824078 --to 817824178 \
-  --batch-size 50 --progress json
+# Tune batch size (up to 200) and enable JSON progress for automation
+hypercore-cli backfill --dataset writer_actions --from 887643588 --to 887643688 \
+  --batch-size 150 --progress json
 ```
+
+**Key flags:**
+
+| Flag | Description | Default |
+|---|---|---|
+| `--from` | Start block number (inclusive, required) | — |
+| `--to` | End block number (inclusive, required) | — |
+| `--batch-size` | JSON-RPC batch size (1–200) | `100` |
+| `--output` | Output format: `console`, `json`, `csv`, `sqlite` | `console` |
+| `--stdout` | Write csv/json to stdout instead of auto-generated file | `false` |
+| `--progress` | Progress output mode: `text`, `json` | `text` |
 
 ### `stats` — Live stream statistics
 
-Monitor event rates and counters in real time.
+Monitor event rates and counters in real time. Use `--help` to see all flags and defaults.
 
 ```bash
 hypercore-cli stats --dataset orders --interval 5
 hypercore-cli stats --dataset trades --tokens BTC,ETH --limit 200
 hypercore-cli stats --dataset writer_actions --progress json --interval 2
 ```
+
+**Key flags:**
+
+| Flag | Description | Default |
+|---|---|---|
+| `--interval` | Snapshot print interval in seconds | `5` |
+| `--limit` | Stop after N events (0 = unlimited) | `0` |
+| `--progress` | Progress output mode: `text`, `json` | `text` |
 
 ### `query` — SQL against collected data
 
@@ -190,6 +242,52 @@ hypercore-cli query --db ./trades.db
 
 ---
 
+## Output Formats
+
+| Format | Flag | Best for |
+|---|---|---|
+| Pretty console | `--output console` (default) | Interactive exploration, live monitoring |
+| JSON lines | `--output json` | Piping to `jq`, scripts, downstream services |
+| CSV | `--output csv` | Spreadsheets, pandas, R, data analysis |
+| SQLite | `--output sqlite --db <path>` | Local research DB, SQL queries, long-running ingestion |
+
+### Auto file output
+
+When using `--output json` or `--output csv`, the CLI automatically generates a timestamped output file in the current directory:
+
+```
+stream-trades-BTC-20260208-084441241.csv
+backfill-orders-20260208-091022103.jsonl
+```
+
+The file path is logged on startup so you always know where your data is going. To write to stdout instead (for piping), use `--stdout`:
+
+```bash
+hypercore-cli stream --dataset trades --output json --stdout | jq .coin
+```
+
+---
+
+## Datasets
+
+| Dataset | Description | Volume | Docs |
+|---|---|---|---|
+| `orders` | Order lifecycle — open, filled, canceled, rejected | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/orders) |
+| `trades` | Executed fills with price, size, and fee details | High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/trades) |
+| `events` | System events — liquidations, funding, settlements | Medium | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/events) |
+| `book_updates` | Level 2 order book changes (bids/asks) | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/book-updates) |
+| `twap` | TWAP order execution tracking | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/twap) |
+| `writer_actions` | HyperCore-to-HyperEVM bridge transfers | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/writer-actions) |
+
+Browse all datasets interactively:
+
+```bash
+hypercore-cli sample --list
+hypercore-cli sample --dataset trades
+```
+
+---
+
 ## Use Cases
 
 ### Live market watch
@@ -205,7 +303,7 @@ hypercore-cli stream --dataset trades --tokens BTC,ETH
 Backfill a block range into SQLite, then query it:
 
 ```bash
-hypercore-cli backfill --dataset trades --from 817824078 --to 817825078 \
+hypercore-cli backfill --dataset trades --from 887643588 --to 887644588 \
   --output sqlite --db ./research.db
 
 hypercore-cli query --db ./research.db \
@@ -215,8 +313,13 @@ hypercore-cli query --db ./research.db \
 ### CSV export for spreadsheets or pandas
 
 ```bash
-hypercore-cli backfill --dataset orders --from 817824078 --to 817824178 \
-  --tokens BTC --statuses filled --output csv > btc_fills.csv
+# Auto-generates a timestamped .csv file
+hypercore-cli backfill --dataset orders --from 887643588 --to 887643688 \
+  --tokens BTC --statuses filled --output csv
+
+# Or pipe to a specific file
+hypercore-cli backfill --dataset orders --from 887643588 --to 887643688 \
+  --tokens BTC --statuses filled --output csv --stdout > btc_fills.csv
 ```
 
 ### Monitor order book depth
@@ -237,7 +340,7 @@ Use `--progress json` for machine-readable status, and `--limit` for bounded run
 
 ```bash
 hypercore-cli stream --dataset orders --progress json --limit 500 2>progress.log
-hypercore-cli backfill --dataset events --from 817824078 --to 817824178 --progress json
+hypercore-cli backfill --dataset events --from 887643588 --to 887643688 --progress json
 ```
 
 JSON progress lines are emitted to `stderr`, keeping `stdout` clean for data output.
@@ -251,30 +354,6 @@ hypercore-cli sample --list
 hypercore-cli sample --dataset twap
 hypercore-cli sample --dataset writer_actions
 ```
-
----
-
-## Datasets
-
-| Dataset | Description | Key fields |
-|---|---|---|
-| `orders` | Order lifecycle — open, filled, canceled, rejected, and more | coin, side, size, price, status, user |
-| `trades` | Executed fills with maker/taker details | coin, side, size, price, fee, user |
-| `events` | System events — liquidations, funding, settlements, ledger updates | eventType, deltaType, users |
-| `book_updates` | Level 2 order book changes (bids/asks) | coin, side, price, size, nOrders |
-| `twap` | TWAP order execution tracking | coin, side, size, price, twapId |
-| `writer_actions` | HyperCore-to-HyperEVM bridge transfers and system writer actions | actionType, user, data |
-
----
-
-## Output Formats
-
-| Format | Flag | Best for |
-|---|---|---|
-| Pretty console | `--output console` (default) | Interactive exploration, live monitoring |
-| JSON lines | `--output json` | Piping to `jq`, scripts, downstream services |
-| CSV | `--output csv` | Spreadsheets, pandas, R, data analysis |
-| SQLite | `--output sqlite --db <path>` | Local research DB, SQL queries, long-running ingestion |
 
 ---
 
@@ -305,7 +384,11 @@ If your environment doesn't support a system keychain (headless servers, contain
 
 ### `better-sqlite3` native binding errors
 
-This usually means the native module was compiled for a different Node version. Fix with:
+```
+SQLite native module failed to load. This usually means better-sqlite3 was compiled for a different Node.js version.
+```
+
+Fix with:
 
 ```bash
 pnpm approve-builds          # approve: better-sqlite3, keytar
@@ -313,6 +396,14 @@ pnpm rebuild better-sqlite3 keytar
 ```
 
 Use **Node 22** for best compatibility.
+
+### Block range out of history
+
+```
+JSON-RPC error -32000: ... The requested block range may be outside available history.
+```
+
+The requested blocks may no longer be available. Try a more recent block range (e.g. blocks near `887643588`).
 
 ---
 

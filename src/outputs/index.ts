@@ -10,9 +10,9 @@ export function createWriter(input: WriterFactoryInput): OutputWriter {
     case 'console':
       return new ConsoleWriter();
     case 'json':
-      return new JsonlWriter();
+      return new JsonlWriter(input.filePath);
     case 'csv':
-      return new CsvWriter();
+      return new CsvWriter(input.filePath);
     case 'sqlite':
       if (!input.dbPath) {
         throw new Error('--db is required when --output sqlite');

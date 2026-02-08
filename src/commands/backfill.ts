@@ -6,12 +6,13 @@ import { runBackfillRange } from '../core/backfill-runner';
 import { getDatasetNames, isDatasetName } from '../datasets/registry';
 import { getNormalizer } from '../datasets/types';
 import { createEventFilter } from '../filters/event-filter';
-import { buildFilters } from '../filters/filter-builder';
+import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { createWriter } from '../outputs';
 import type { DatasetName, OutputFormat } from '../types/common';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
+import { generateOutputPath } from '../utils/output-path';
 import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
 
 const DATASETS = getDatasetNames();
@@ -34,6 +35,7 @@ interface BackfillOptions {
   token?: string;
   filter?: string[];
   quiet?: boolean;
+  stdout?: boolean;
 }
 
 export function registerBackfillCommand(program: Command): void {
@@ -43,10 +45,10 @@ export function registerBackfillCommand(program: Command): void {
     .option('-d, --dataset <dataset>', `Dataset: ${DATASETS.join(', ')}`)
     .requiredOption('--from <block>', 'Start block (inclusive)')
     .requiredOption('--to <block>', 'End block (inclusive)')
-    .option('--batch-size <n>', 'JSON-RPC batch size (1-100)', String(DEFAULT_BATCH_SIZE))
-    .option('-t, --tokens <tokens>', 'Coin filter CSV (e.g. BTC,ETH)')
-    .option('-u, --users <users>', 'User address filter CSV')
-    .option('-s, --statuses <statuses>', 'Order status filter CSV (orders only)')
+    .option('--batch-size <n>', 'JSON-RPC batch size (1-200, default: 100)', String(DEFAULT_BATCH_SIZE))
+    .option('-t, --tokens <tokens>', 'Comma-separated coin filter (e.g. BTC,ETH)')
+    .option('-u, --users <users>', 'Comma-separated user address filter (e.g. 0xabc,0xdef)')
+    .option('-s, --statuses <statuses>', 'Comma-separated order status filter (orders only, e.g. open,filled)')
     .option('-o, --output <output>', 'Output format: console, json, csv, sqlite', 'console')
     .option('--db <path>', 'SQLite DB path (required when --output sqlite)')
     .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)', '0')
@@ -57,6 +59,7 @@ export function registerBackfillCommand(program: Command): void {
       `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
+    .option('--stdout', 'Write csv/json output to stdout instead of file', false)
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
     .action(async (options: BackfillOptions) => {
       await backfillAction(options);
@@ -117,14 +120,20 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   });
   const matchesEvent = createEventFilter(filters);
 
+  let filePath: string | undefined;
+  if ((output === 'csv' || output === 'json') && !options.stdout) {
+    filePath = generateOutputPath('backfill', dataset, output, options.tokens);
+  }
+  const limitLabel = limit > 0 ? String(limit) : 'unlimited';
   logger.info(
-    `Backfilling '${dataset}' blocks ${fromBlock}-${toBlock} via ${urls.httpUrl} (batch=${batchSize})`,
+    `Backfilling '${dataset}' blocks ${fromBlock}-${toBlock} via ${urls.httpUrl} (batch=${batchSize}, output=${output}${filePath ? ` -> ${filePath}` : ''}, limit=${limitLabel}, ${summarizeFilters(filters)})`,
   );
 
   const writer = createWriter({
     format: output,
     dataset,
     dbPath: options.db,
+    filePath,
   });
   await writer.init({ dataset });
 
@@ -191,8 +200,8 @@ function resolveLimit(input?: string): number {
 function parseBatchSize(input?: string): number {
   const raw = input ?? String(DEFAULT_BATCH_SIZE);
   const parsed = Number.parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 1 || parsed > 100) {
-    throw new Error(`Invalid --batch-size '${raw}'. Must be an integer between 1 and 100.`);
+  if (Number.isNaN(parsed) || parsed < 1 || parsed > 200) {
+    throw new Error(`Invalid --batch-size '${raw}'. Must be an integer between 1 and 200.`);
   }
   return parsed;
 }

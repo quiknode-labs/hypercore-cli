@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { resolveCredentials } from '../config/credentials';
 import { getDatasetNames, isDatasetName } from '../datasets/registry';
 import { getNormalizer } from '../datasets/types';
-import { buildFilters } from '../filters/filter-builder';
+import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { runStreamRuntime } from '../core/stream-runtime';
 import type { DatasetName, ProgressMode } from '../types/common';
 import type { NormalizedEvent } from '../types/stream';
@@ -118,9 +118,9 @@ export function registerStatsCommand(program: Command): void {
     .command('stats')
     .description('Stream live statistics for a dataset')
     .option('-d, --dataset <dataset>', `Dataset: ${DATASETS.join(', ')}`)
-    .option('-t, --tokens <tokens>', 'Coin filter CSV (e.g. BTC,ETH)')
-    .option('-u, --users <users>', 'User address filter CSV')
-    .option('-s, --statuses <statuses>', 'Order status filter CSV (orders only)')
+    .option('-t, --tokens <tokens>', 'Comma-separated coin filter (e.g. BTC,ETH)')
+    .option('-u, --users <users>', 'Comma-separated user address filter (e.g. 0xabc,0xdef)')
+    .option('-s, --statuses <statuses>', 'Comma-separated order status filter (orders only, e.g. open,filled)')
     .option('--interval <seconds>', 'Snapshot print interval in seconds', '5')
     .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)', '0')
     .option('-q, --quiet', 'Suppress status logs', false)
@@ -167,7 +167,6 @@ async function statsAction(options: StatsOptions): Promise<void> {
   });
 
   const urls = deriveEndpointUrls(credentials.endpoint, credentials.token);
-  logger.info(`Connecting to ${urls.wsUrl}`);
 
   const filters = buildFilters({
     dataset,
@@ -176,6 +175,8 @@ async function statsAction(options: StatsOptions): Promise<void> {
     statuses: options.statuses,
     rawFilters: options.filter,
   });
+  const limitLabel = limit > 0 ? String(limit) : 'unlimited';
+  logger.info(`Connecting to ${urls.wsUrl} (dataset=${dataset}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
 
   const stats = new LiveStats(dataset);
   const timer = setInterval(() => {

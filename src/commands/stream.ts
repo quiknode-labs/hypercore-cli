@@ -3,13 +3,14 @@ import { Command } from 'commander';
 import { resolveCredentials } from '../config/credentials';
 import { getDatasetNames, isDatasetName } from '../datasets/registry';
 import { getNormalizer } from '../datasets/types';
-import { buildFilters } from '../filters/filter-builder';
+import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { runStreamRuntime } from '../core/stream-runtime';
 import { createWriter } from '../outputs';
 import type { DatasetName, OutputFormat } from '../types/common';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
+import { generateOutputPath } from '../utils/output-path';
 import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
 
 const DATASETS = getDatasetNames();
@@ -28,6 +29,7 @@ interface StreamOptions {
   endpoint?: string;
   token?: string;
   filter?: string[];
+  stdout?: boolean;
 }
 
 export function registerStreamCommand(program: Command): void {
@@ -35,9 +37,9 @@ export function registerStreamCommand(program: Command): void {
     .command('stream')
     .description('Stream HyperCore datasets')
     .option('-d, --dataset <dataset>', `Dataset: ${DATASETS.join(', ')}`)
-    .option('-t, --tokens <tokens>', 'Coin filter CSV (e.g. BTC,ETH)')
-    .option('-u, --users <users>', 'User address filter CSV')
-    .option('-s, --statuses <statuses>', 'Order status filter CSV (orders only)')
+    .option('-t, --tokens <tokens>', 'Comma-separated coin filter (e.g. BTC,ETH)')
+    .option('-u, --users <users>', 'Comma-separated user address filter (e.g. 0xabc,0xdef)')
+    .option('-s, --statuses <statuses>', 'Comma-separated order status filter (orders only, e.g. open,filled)')
     .option('-o, --output <output>', 'Output format: console, json, csv, sqlite', 'console')
     .option('--db <path>', 'SQLite DB path (required when --output sqlite)')
     .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)', '0')
@@ -48,6 +50,7 @@ export function registerStreamCommand(program: Command): void {
       `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
+    .option('--stdout', 'Write csv/json output to stdout instead of file', false)
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
     .action(async (options: StreamOptions) => {
       await streamAction(options);
@@ -91,7 +94,6 @@ async function streamAction(options: StreamOptions): Promise<void> {
   });
 
   const urls = deriveEndpointUrls(credentials.endpoint, credentials.token);
-  logger.info(`Connecting to ${urls.wsUrl}`);
 
   const filters = buildFilters({
     dataset,
@@ -100,11 +102,18 @@ async function streamAction(options: StreamOptions): Promise<void> {
     statuses: options.statuses,
     rawFilters: options.filter,
   });
+  const limitLabel = limit > 0 ? String(limit) : 'unlimited';
+  let filePath: string | undefined;
+  if ((output === 'csv' || output === 'json') && !options.stdout) {
+    filePath = generateOutputPath('stream', dataset, output, options.tokens);
+  }
+  logger.info(`Connecting to ${urls.wsUrl} (dataset=${dataset}, output=${output}${filePath ? ` -> ${filePath}` : ''}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
 
   const writer = createWriter({
     format: output,
     dataset,
     dbPath: options.db,
+    filePath,
   });
   await writer.init({ dataset });
 

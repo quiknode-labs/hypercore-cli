@@ -1,3 +1,5 @@
+import { createWriteStream, type WriteStream } from 'node:fs';
+
 import type { DatasetName } from '../types/common';
 import type { NormalizedEvent } from '../types/stream';
 import { toCsvLine } from '../utils/csv';
@@ -98,11 +100,22 @@ const HEADERS: Record<DatasetName, string[]> = {
 };
 
 export class CsvWriter implements OutputWriter {
+  private readonly filePath: string | undefined;
   private dataset: DatasetName | null = null;
+  private out: NodeJS.WritableStream = process.stdout;
+  private fileStream: WriteStream | null = null;
+
+  constructor(filePath?: string) {
+    this.filePath = filePath;
+  }
 
   async init(context: WriterInitContext): Promise<void> {
     this.dataset = context.dataset;
-    process.stdout.write(`${toCsvLine(HEADERS[context.dataset])}\n`);
+    if (this.filePath) {
+      this.fileStream = createWriteStream(this.filePath, { flags: 'w', encoding: 'utf8' });
+      this.out = this.fileStream;
+    }
+    this.out.write(`${toCsvLine(HEADERS[context.dataset])}\n`);
   }
 
   async write(event: NormalizedEvent): Promise<void> {
@@ -112,7 +125,7 @@ export class CsvWriter implements OutputWriter {
 
     switch (event.stream) {
       case 'orders':
-        process.stdout.write(
+        this.out.write(
           `${toCsvLine([
             event.eventKey,
             event.blockNumber,
@@ -134,7 +147,7 @@ export class CsvWriter implements OutputWriter {
         );
         return;
       case 'trades':
-        process.stdout.write(
+        this.out.write(
           `${toCsvLine([
             event.eventKey,
             event.blockNumber,
@@ -155,7 +168,7 @@ export class CsvWriter implements OutputWriter {
         );
         return;
       case 'events':
-        process.stdout.write(
+        this.out.write(
           `${toCsvLine([
             event.eventKey,
             event.blockNumber,
@@ -169,7 +182,7 @@ export class CsvWriter implements OutputWriter {
         );
         return;
       case 'book_updates':
-        process.stdout.write(
+        this.out.write(
           `${toCsvLine([
             event.eventKey,
             event.blockNumber,
@@ -186,7 +199,7 @@ export class CsvWriter implements OutputWriter {
         );
         return;
       case 'twap':
-        process.stdout.write(
+        this.out.write(
           `${toCsvLine([
             event.eventKey,
             event.blockNumber,
@@ -209,7 +222,7 @@ export class CsvWriter implements OutputWriter {
         );
         return;
       case 'writer_actions':
-        process.stdout.write(
+        this.out.write(
           `${toCsvLine([
             event.eventKey,
             event.blockNumber,
@@ -234,6 +247,12 @@ export class CsvWriter implements OutputWriter {
   }
 
   async close(): Promise<void> {
-    return Promise.resolve();
+    if (this.fileStream) {
+      await new Promise<void>((resolve, reject) => {
+        this.fileStream!.end(() => resolve());
+        this.fileStream!.on('error', reject);
+      });
+      this.fileStream = null;
+    }
   }
 }

@@ -3,7 +3,7 @@ export interface EndpointUrls {
   httpUrl: string;
 }
 
-const REDACTED_VALUE = 'REDACTED';
+const REDACTED_VALUE = '****';
 const SENSITIVE_QUERY_KEY_PATTERN = /(token|api[_-]?key|authorization)/i;
 export const QUICKNODE_WSS_EXAMPLE =
   'wss://YOUR_ENDPOINT_NAME.hype-mainnet.quiknode.pro/YOUR_TOKEN/hypercore/ws';
@@ -125,6 +125,7 @@ export function redactEndpointUrl(endpointInput: string): string {
   if (looksLikeUrl(endpoint)) {
     try {
       const parsed = new URL(endpoint);
+      parsed.hostname = redactHostname(parsed.hostname);
       parsed.pathname = redactHypercoreTokenPath(parsed.pathname);
       redactSensitiveSearchParams(parsed.searchParams);
       return parsed.toString();
@@ -224,6 +225,20 @@ function extractTokenFromSegments(segments: string[]): string | null {
     return segments[hypercoreIndex - 1] ?? null;
   }
   return null;
+}
+
+function redactHostname(hostname: string): string {
+  const parts = hostname.split('.');
+  if (parts.length < 2) {
+    return hostname;
+  }
+  const subdomain = parts[0] ?? '';
+  if (subdomain.length <= 6) {
+    parts[0] = REDACTED_VALUE;
+  } else {
+    parts[0] = `${subdomain.slice(0, 3)}***${subdomain.slice(-3)}`;
+  }
+  return parts.join('.');
 }
 
 function redactHypercoreTokenPath(value: string): string {

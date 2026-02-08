@@ -42,11 +42,28 @@ export class SqliteWriter implements OutputWriter {
 
   async init(context: WriterInitContext): Promise<void> {
     this.dataset = context.dataset;
-    const imported = (await import('better-sqlite3')) as unknown as
-      | BetterSqliteModule
-      | { default: BetterSqliteModule };
-    const BetterSqlite = typeof imported === 'function' ? imported : imported.default;
-    this.db = new BetterSqlite(this.dbPath);
+    let BetterSqlite: BetterSqliteModule;
+    try {
+      const imported = (await import('better-sqlite3')) as unknown as
+        | BetterSqliteModule
+        | { default: BetterSqliteModule };
+      BetterSqlite = typeof imported === 'function' ? imported : imported.default;
+      this.db = new BetterSqlite(this.dbPath);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        message.includes('bindings') ||
+        message.includes('MODULE_NOT_FOUND') ||
+        message.includes('Could not locate')
+      ) {
+        throw new Error(
+          `SQLite native module failed to load. This usually means better-sqlite3 was compiled for a different Node.js version.\n\n` +
+            `Fix: run 'pnpm rebuild better-sqlite3' (or 'npm rebuild better-sqlite3') with Node 22.\n\n` +
+            `Original error: ${message}`,
+        );
+      }
+      throw error;
+    }
 
     this.db.pragma('journal_mode = WAL');
     this.createSchema(this.db);

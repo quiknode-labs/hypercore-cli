@@ -2,7 +2,7 @@ import WebSocket from 'ws';
 
 import { buildSubscribeRequest, buildUnsubscribeRequest } from '../api/websocket-streams';
 import { getDatasetDefinition, streamNameMatchesDataset } from '../datasets/registry';
-import type { FilterMap } from '../filters/filter-builder';
+import { summarizeFilters, type FilterMap } from '../filters/filter-builder';
 import type { DatasetName } from '../types/common';
 import type { RawStreamBlock } from '../types/stream';
 
@@ -48,7 +48,8 @@ export class WsClient {
       filters: Object.keys(this.options.filters).length > 0 ? this.options.filters : undefined,
     });
     socket.send(subscribePayload);
-    this.options.onInfo(`Subscription request sent for '${this.options.dataset}'`);
+    const filterSummary = summarizeFilters(this.options.filters);
+    this.options.onInfo(`Subscription request sent for '${this.options.dataset}' (${filterSummary})`);
 
     return new Promise<'closed' | 'aborted'>((resolve, reject) => {
       let unknownPayloadLogged = false;
@@ -68,7 +69,7 @@ export class WsClient {
           }
 
           if (isSubscriptionAck(parsed, this.options.dataset)) {
-            this.options.onInfo(`Subscription confirmed for '${this.options.dataset}'`);
+            this.options.onInfo(`Subscription confirmed for '${this.options.dataset}' (${summarizeFilters(this.options.filters)})`);
             return;
           }
 

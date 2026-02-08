@@ -70,6 +70,13 @@ export class JsonRpcClient implements StreamProcessorBlockFetcher {
 
     const data = (await response.json()) as JsonRpcResponse<T>;
     if (data.error) {
+      if (data.error.code === -32000) {
+        throw new Error(
+          `JSON-RPC error ${data.error.code}: ${data.error.message}. ` +
+            `The requested block range may be outside available history. ` +
+            `Try a more recent block range.`,
+        );
+      }
       throw new Error(`JSON-RPC error ${data.error.code}: ${data.error.message}`);
     }
     if (!data.result) {

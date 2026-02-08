@@ -70,6 +70,16 @@ function splitCsv(csv?: string): string[] {
     .filter((part) => part.length > 0);
 }
 
+export function summarizeFilters(filters: FilterMap): string {
+  const keys = Object.keys(filters);
+  if (keys.length === 0) {
+    return 'no filters';
+  }
+  return keys
+    .map((key) => `${key}=${(filters[key] ?? []).join(',')}`)
+    .join(', ');
+}
+
 function mergeValues(filters: FilterMap, key: string, values: string[]): void {
   const normalizedKey = key.trim();
   const existing = filters[normalizedKey] ?? [];
