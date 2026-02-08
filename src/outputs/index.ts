@@ -14,10 +14,10 @@ export function createWriter(input: WriterFactoryInput): OutputWriter {
     case 'csv':
       return new CsvWriter(input.filePath);
     case 'sqlite':
-      if (!input.dbPath) {
-        throw new Error('--db is required when --output sqlite');
+      if (!input.filePath) {
+        throw new Error('SQLite output requires a file path');
       }
-      return new SqliteWriter(input.dbPath);
+      return new SqliteWriter(input.filePath);
     default: {
       const neverFormat: never = input.format;
       throw new Error(`Unsupported output format: ${String(neverFormat)}`);

@@ -6,6 +6,16 @@ import { mkdtemp, rm } from 'node:fs/promises';
 
 import { createWriter } from '../../dist/src/outputs/index.js';
 
+/** Returns true if the error message indicates a better-sqlite3 native binding failure. */
+function isSqliteBindingError(message) {
+  return (
+    message.includes('Could not locate the bindings file') ||
+    message.includes('NODE_MODULE_VERSION') ||
+    message.includes('ERR_DLOPEN_FAILED') ||
+    message.includes('native module failed to load')
+  );
+}
+
 const sampleOrder = {
   eventKey: 'orders:1:0:test',
   stream: 'orders',
@@ -76,15 +86,15 @@ test('CSV writer outputs header and row', async () => {
 });
 
 test('SQLite writer writes row when better-sqlite3 is available', async (t) => {
-  let sqliteAvailable = true;
   try {
     await import('better-sqlite3');
-  } catch {
-    sqliteAvailable = false;
-  }
-
-  if (!sqliteAvailable) {
-    t.skip('better-sqlite3 not installed in this environment');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isSqliteBindingError(message)) {
+      t.skip('better-sqlite3 native binding unavailable for current Node runtime');
+    } else {
+      t.skip('better-sqlite3 not installed in this environment');
+    }
     return;
   }
 
@@ -92,12 +102,12 @@ test('SQLite writer writes row when better-sqlite3 is available', async (t) => {
   const dbPath = path.join(tempDir, 'events.db');
 
   try {
-    const writer = createWriter({ format: 'sqlite', dataset: 'orders', dbPath });
+    const writer = createWriter({ format: 'sqlite', dataset: 'orders', filePath: dbPath });
     try {
       await writer.init({ dataset: 'orders' });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message.includes('Could not locate the bindings file')) {
+      if (isSqliteBindingError(message)) {
         t.skip('better-sqlite3 native binding unavailable for current Node runtime');
         return;
       }

@@ -115,7 +115,7 @@ $ hypercore-cli stream --dataset orders --statuses open,filled
 $ hypercore-cli stream --dataset trades --tokens BTC --output json | jq '.price'
 
 # Save to SQLite
-$ hypercore-cli stream --dataset orders --output sqlite --db ./orders.db
+$ hypercore-cli stream --dataset orders --output sqlite --path ./orders.db
 
 # CSV output to file
 $ hypercore-cli stream --dataset trades --tokens ETH --output csv > eth-trades.csv
@@ -130,7 +130,7 @@ $ hypercore-cli stream --dataset trades --tokens ETH --output csv > eth-trades.c
 | `--users, -u` | Filter by wallet addresses | all |
 | `--statuses, -s` | Filter by status (orders only) | all |
 | `--output, -o` | Output format: console, json, csv, sqlite | console |
-| `--db` | SQLite database path (required if output=sqlite) | - |
+| `--path` | Override auto-generated output file path (csv, json, sqlite) | auto-generated |
 | `--limit, -l` | Stop after N events (0 = unlimited) | 0 |
 | `--quiet, -q` | Suppress status messages | false |
 
@@ -343,7 +343,7 @@ event_id,status,user,coin,side,limit_px,sz,orig_sz,order_type,tif,block_number,b
 Persists data to a local SQLite database for later querying.
 
 ```bash
-$ hypercore-cli stream --dataset orders --output sqlite --db ./data.db
+$ hypercore-cli stream --dataset orders --output sqlite --path ./data.db
 
 💾 Saving to ./data.db
 
@@ -531,7 +531,7 @@ $ hypercore-cli stream --dataset orders --tokens BTC,ETH
 ```bash
 $ hypercore-cli stream --dataset orders \
   --users 0x72358ece...,0x258a4b8a...,0xabcd1234... \
-  --output sqlite --db ./whales.db
+  --output sqlite --path ./whales.db
 ```
 
 ### 4. Data Collection for Analysis
@@ -539,7 +539,7 @@ $ hypercore-cli stream --dataset orders \
 
 ```bash
 # Start collector (run in background or tmux)
-$ hypercore-cli stream --dataset trades --output sqlite --db ./trades-2026-01-22.db
+$ hypercore-cli stream --dataset trades --output sqlite --path ./trades-2026-01-22.db
 
 # Later, analyze with SQL
 $ hypercore-cli query --db ./trades-2026-01-22.db

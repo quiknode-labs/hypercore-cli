@@ -7,6 +7,16 @@ import { spawnSync } from 'node:child_process';
 
 const CLI_PATH = path.join(process.cwd(), 'dist/src/index.js');
 
+/** Returns true if the error message indicates a better-sqlite3 native binding failure. */
+function isSqliteBindingError(message) {
+  return (
+    message.includes('Could not locate the bindings file') ||
+    message.includes('NODE_MODULE_VERSION') ||
+    message.includes('ERR_DLOPEN_FAILED') ||
+    message.includes('native module failed to load')
+  );
+}
+
 function runCli(args, options = {}) {
   const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
     encoding: 'utf8',
@@ -63,8 +73,13 @@ test('query --sql returns table output for valid query', async (t) => {
   try {
     const imported = await import('better-sqlite3');
     sqlite = typeof imported === 'function' ? imported : imported.default;
-  } catch {
-    t.skip('better-sqlite3 not available in this runtime');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isSqliteBindingError(message)) {
+      t.skip('better-sqlite3 native binding unavailable for current Node runtime');
+    } else {
+      t.skip('better-sqlite3 not available in this runtime');
+    }
     return;
   }
 
@@ -77,7 +92,7 @@ test('query --sql returns table output for valid query', async (t) => {
       db = new sqlite(dbPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message.includes('Could not locate the bindings file')) {
+      if (isSqliteBindingError(message)) {
         t.skip('better-sqlite3 native binding unavailable for current Node runtime');
         return;
       }
@@ -113,8 +128,13 @@ test('query --sql exits non-zero for invalid SQL', async (t) => {
   try {
     const imported = await import('better-sqlite3');
     sqlite = typeof imported === 'function' ? imported : imported.default;
-  } catch {
-    t.skip('better-sqlite3 not available in this runtime');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (isSqliteBindingError(message)) {
+      t.skip('better-sqlite3 native binding unavailable for current Node runtime');
+    } else {
+      t.skip('better-sqlite3 not available in this runtime');
+    }
     return;
   }
 
@@ -127,7 +147,7 @@ test('query --sql exits non-zero for invalid SQL', async (t) => {
       db = new sqlite(dbPath);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message.includes('Could not locate the bindings file')) {
+      if (isSqliteBindingError(message)) {
         t.skip('better-sqlite3 native binding unavailable for current Node runtime');
         return;
       }
@@ -181,4 +201,20 @@ test('backfill rejects invalid --progress before network calls', () => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Invalid --progress/);
+});
+
+test('stream rejects --stdout with --output sqlite', () => {
+  const result = runCli([
+    'stream',
+    '--dataset',
+    'orders',
+    '--output',
+    'sqlite',
+    '--stdout',
+    '--limit',
+    '1',
+  ]);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /--stdout is not supported with --output sqlite/);
 });

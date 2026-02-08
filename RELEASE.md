@@ -69,7 +69,7 @@ Verify package metadata:
 ## 5) Large Backfill Runtime Recommendations
 
 - Prefer Node 22 runtime.
-- Use SQLite output for long-running ingestion: `--output sqlite --db <path>`.
+- Use SQLite output for long-running ingestion: `--output sqlite` (or `--output sqlite --path <path>`).
 - Keep JSON-RPC batches at or near max (`--batch-size 100`) unless endpoint pressure requires lower values.
 - Use structured progress for automation and monitoring: `--progress json`.
 - For very large ranges, consider higher Node heap:

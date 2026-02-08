@@ -15,6 +15,5 @@ export interface OutputWriter {
 export interface WriterFactoryInput {
   format: OutputFormat;
   dataset: DatasetName;
-  dbPath?: string;
   filePath?: string;
 }

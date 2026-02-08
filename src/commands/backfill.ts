@@ -28,7 +28,7 @@ interface BackfillOptions {
   users?: string;
   statuses?: string;
   output?: string;
-  db?: string;
+  path?: string;
   limit?: string;
   progress?: string;
   endpoint?: string;
@@ -50,7 +50,7 @@ export function registerBackfillCommand(program: Command): void {
     .option('-u, --users <users>', 'Comma-separated user address filter (e.g. 0xabc,0xdef)')
     .option('-s, --statuses <statuses>', 'Comma-separated order status filter (orders only, e.g. open,filled)')
     .option('-o, --output <output>', 'Output format: console, json, csv, sqlite', 'console')
-    .option('--db <path>', 'SQLite DB path (required when --output sqlite)')
+    .option('--path <path>', 'Override auto-generated output file path (csv, json, sqlite)')
     .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)', '0')
     .option('-q, --quiet', 'Suppress status logs', false)
     .option('--progress <mode>', 'Progress log mode: text, json', 'text')
@@ -83,8 +83,8 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   if (toBlock < fromBlock) {
     throw new Error(`--to (${toBlock}) must be greater than or equal to --from (${fromBlock})`);
   }
-  if (output === 'sqlite' && !options.db) {
-    throw new Error('--db is required when --output sqlite');
+  if (output === 'sqlite' && options.stdout) {
+    throw new Error('--stdout is not supported with --output sqlite (SQLite must write to a file)');
   }
 
   const credentials = await resolveCredentials({
@@ -121,7 +121,9 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   const matchesEvent = createEventFilter(filters);
 
   let filePath: string | undefined;
-  if ((output === 'csv' || output === 'json') && !options.stdout) {
+  if (options.path) {
+    filePath = options.path;
+  } else if (!options.stdout && (output === 'csv' || output === 'json' || output === 'sqlite')) {
     filePath = generateOutputPath('backfill', dataset, output, options.tokens);
   }
   const limitLabel = limit > 0 ? String(limit) : 'unlimited';
@@ -132,7 +134,6 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   const writer = createWriter({
     format: output,
     dataset,
-    dbPath: options.db,
     filePath,
   });
   await writer.init({ dataset });

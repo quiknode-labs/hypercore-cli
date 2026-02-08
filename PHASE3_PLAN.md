@@ -21,7 +21,7 @@ Extend Phase 2 with historical ingestion and operational hardening while preserv
 
 Acceptance:
 - `backfill --dataset orders --from X --to Y --limit 1` exits deterministically
-- `backfill --dataset trades --output sqlite --db ./x.db` writes rows
+- `backfill --dataset trades --output sqlite --path ./x.db` writes rows
 - Test coverage for batching/limit/filter matching
 
 ### Milestone B (Delivered): Query and export hardening
@@ -51,7 +51,7 @@ hypercore-cli backfill \
   --to <end_block_inclusive> \
   [--batch-size <1-100>] \
   [--tokens <csv>] [--users <csv>] [--statuses <csv>] [--filter key=v1,v2] \
-  [--output <console|json|csv|sqlite>] [--db <path>] \
+  [--output <console|json|csv|sqlite>] [--path <path>] \
   [--limit <n>] [--endpoint <url>] [--token <token>] [--quiet]
 ```
 

@@ -1,7 +1,7 @@
 export function generateOutputPath(
   command: string,
   dataset: string,
-  format: 'csv' | 'json',
+  format: 'csv' | 'json' | 'sqlite',
   tokens?: string,
 ): string {
   const now = new Date();
@@ -30,6 +30,6 @@ export function generateOutputPath(
   }
   parts.push(`${date}-${time}`);
 
-  const ext = format === 'json' ? 'jsonl' : format;
+  const ext = format === 'sqlite' ? 'db' : format;
   return `${parts.join('-')}.${ext}`;
 }

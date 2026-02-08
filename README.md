@@ -24,7 +24,7 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 | **Real-time streaming** | Subscribe to live WebSocket feeds for orders, trades, events, book updates, TWAP, and writer actions |
 | **Auto-reconnect + gap recovery** | Exponential backoff reconnection with automatic JSON-RPC backfill — zero data loss on network drops |
 | **Historical backfill** | Fetch any block range via JSON-RPC and export to JSON, CSV, or SQLite |
-| **Auto file output** | CSV and JSON outputs are automatically written to timestamped files — no manual naming needed |
+| **Auto file output** | CSV, JSON, and SQLite outputs are automatically written to timestamped files — no manual naming needed |
 | **Built-in SQL query engine** | Interactive REPL and one-shot SQL against your local SQLite data |
 | **6 datasets** | `orders` · `trades` · `events` · `book_updates` · `twap` · `writer_actions` |
 | **4 output formats** | Pretty console, JSON lines, CSV, and SQLite persistence |
@@ -141,8 +141,11 @@ hypercore-cli stream --dataset book_updates --output json --limit 50
 # Force JSON output to stdout instead of file
 hypercore-cli stream --dataset trades --output json --limit 10 --stdout
 
-# Persist directly to SQLite
-hypercore-cli stream --dataset trades --output sqlite --db ./trades.db --limit 1000
+# Persist directly to SQLite (auto-generates .db file)
+hypercore-cli stream --dataset trades --output sqlite --limit 1000
+
+# SQLite with a custom file path
+hypercore-cli stream --dataset trades --output sqlite --path ./trades.db --limit 1000
 ```
 
 **Key flags:**
@@ -155,8 +158,8 @@ hypercore-cli stream --dataset trades --output sqlite --db ./trades.db --limit 1
 | `--statuses` | Filter by order status (orders only), e.g. `open,filled` | _(none)_ |
 | `--output` | Output format: `console`, `json`, `csv`, `sqlite` | `console` |
 | `--limit` | Stop after N events (0 = unlimited) | `0` |
+| `--path` | Override auto-generated output file path (csv, json, sqlite) | _(auto-generated)_ |
 | `--stdout` | Write csv/json to stdout instead of auto-generated file | `false` |
-| `--db` | SQLite database path (required with `--output sqlite`) | — |
 
 If the connection drops, the CLI automatically reconnects with exponential backoff and backfills any missed blocks via JSON-RPC — no manual intervention needed.
 
@@ -176,9 +179,13 @@ hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
 hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
   --output csv --stdout > trades.csv
 
-# Ingest into SQLite
+# Ingest into SQLite (auto-generates .db file)
 hypercore-cli backfill --dataset events --from 887643588 --to 887643688 \
-  --output sqlite --db ./events.db
+  --output sqlite
+
+# SQLite with a custom file path
+hypercore-cli backfill --dataset events --from 887643588 --to 887643688 \
+  --output sqlite --path ./events.db
 
 # Tune batch size (up to 200) and enable JSON progress for automation
 hypercore-cli backfill --dataset writer_actions --from 887643588 --to 887643688 \
@@ -193,6 +200,7 @@ hypercore-cli backfill --dataset writer_actions --from 887643588 --to 887643688 
 | `--to` | End block number (inclusive, required) | — |
 | `--batch-size` | JSON-RPC batch size (1–200) | `100` |
 | `--output` | Output format: `console`, `json`, `csv`, `sqlite` | `console` |
+| `--path` | Override auto-generated output file path (csv, json, sqlite) | _(auto-generated)_ |
 | `--stdout` | Write csv/json to stdout instead of auto-generated file | `false` |
 | `--progress` | Progress output mode: `text`, `json` | `text` |
 
@@ -249,18 +257,25 @@ hypercore-cli query --db ./trades.db
 | Pretty console | `--output console` (default) | Interactive exploration, live monitoring |
 | JSON lines | `--output json` | Piping to `jq`, scripts, downstream services |
 | CSV | `--output csv` | Spreadsheets, pandas, R, data analysis |
-| SQLite | `--output sqlite --db <path>` | Local research DB, SQL queries, long-running ingestion |
+| SQLite | `--output sqlite` | Local research DB, SQL queries, long-running ingestion |
 
 ### Auto file output
 
-When using `--output json` or `--output csv`, the CLI automatically generates a timestamped output file in the current directory:
+When using `--output json`, `--output csv`, or `--output sqlite`, the CLI automatically generates a timestamped output file in the current directory:
 
 ```
 stream-trades-BTC-20260208-084441241.csv
-backfill-orders-20260208-091022103.jsonl
+backfill-orders-20260208-091022103.json
+stream-trades-20260208-084441241.db
 ```
 
-The file path is logged on startup so you always know where your data is going. To write to stdout instead (for piping), use `--stdout`:
+The file path is logged on startup so you always know where your data is going. Use `--path` to override the auto-generated name:
+
+```bash
+hypercore-cli stream --dataset trades --output sqlite --path ./my-trades.db
+```
+
+To write csv/json to stdout instead (for piping), use `--stdout`:
 
 ```bash
 hypercore-cli stream --dataset trades --output json --stdout | jq .coin
@@ -304,7 +319,7 @@ Backfill a block range into SQLite, then query it:
 
 ```bash
 hypercore-cli backfill --dataset trades --from 887643588 --to 887644588 \
-  --output sqlite --db ./research.db
+  --output sqlite --path ./research.db
 
 hypercore-cli query --db ./research.db \
   --sql "SELECT coin, COUNT(*) AS fills, ROUND(SUM(size), 2) AS volume FROM trades GROUP BY coin ORDER BY volume DESC"

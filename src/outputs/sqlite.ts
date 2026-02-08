@@ -26,7 +26,7 @@ interface BetterSqliteModule {
 }
 
 export class SqliteWriter implements OutputWriter {
-  private readonly dbPath: string;
+  private readonly filePath: string;
   private db: BetterSqliteDatabase | null = null;
   private dataset: DatasetName | null = null;
   private orderInsert: BetterSqliteStatement | null = null;
@@ -36,8 +36,8 @@ export class SqliteWriter implements OutputWriter {
   private twapInsert: BetterSqliteStatement | null = null;
   private writerActionInsert: BetterSqliteStatement | null = null;
 
-  constructor(dbPath: string) {
-    this.dbPath = dbPath;
+  constructor(filePath: string) {
+    this.filePath = filePath;
   }
 
   async init(context: WriterInitContext): Promise<void> {
@@ -48,7 +48,7 @@ export class SqliteWriter implements OutputWriter {
         | BetterSqliteModule
         | { default: BetterSqliteModule };
       BetterSqlite = typeof imported === 'function' ? imported : imported.default;
-      this.db = new BetterSqlite(this.dbPath);
+      this.db = new BetterSqlite(this.filePath);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       if (
