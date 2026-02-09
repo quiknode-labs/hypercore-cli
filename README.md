@@ -1,5 +1,8 @@
 # @quicknode/hypercore-cli
 
+> **Note for reviewers**: While reviewing this CLI tool locally, check the [Local Development Setup](#local-development-setup) section for instructions on how to build, run, and test the CLI. Use `node dist/src/index.js` to run the built CLI from the command line, instead of `hypercore-cli`, as the package is not published to npm yet. 
+For example: `node dist/src/index.js stream --dataset trades --tokens BTC,ETH --limit 20`
+
 Stream, backfill, and analyze [Hyperliquid L1](https://hyperliquid.gitbook.io/hyperliquid-docs/) data from the terminal — powered by [Quicknode HyperCore](https://www.quicknode.com/docs/hyperliquid/datasets).
 
 ```bash
