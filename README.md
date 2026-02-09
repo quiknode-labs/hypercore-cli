@@ -493,13 +493,34 @@ The requested blocks may no longer be available. Try a more recent block range (
 
 ## Contributing
 
-### Setup
+### Local development setup
 
 ```bash
 git clone https://github.com/quiknode-labs/hypercore-cli.git
 cd hypercore-cli
+```
+
+Use one package manager:
+
+```bash
+# pnpm
 pnpm install
 pnpm build
+node dist/src/index.js --help
+```
+
+```bash
+# npm
+npm install
+npm run build
+node dist/src/index.js --help
+```
+
+```bash
+# yarn
+yarn install
+yarn build
+node dist/src/index.js --help
 ```
 
 ### Development workflow
