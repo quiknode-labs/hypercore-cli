@@ -10,7 +10,8 @@ import type { NormalizedEvent } from '../types/stream';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
-import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { createConnection } from '../x402/connection';
 
 const DATASETS = getDatasetNames();
 
@@ -26,6 +27,9 @@ interface StatsOptions {
   limit?: string;
   quiet?: boolean;
   progress?: string;
+  mode?: string;
+  walletKey?: string;
+  x402Url?: string;
 }
 
 interface StatsSnapshot {
@@ -133,6 +137,9 @@ export function registerStatsCommand(program: Command): void {
       `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
+    .option('--mode <mode>', 'Connection mode: quicknode, x402')
+    .option('--wallet-key <key>', 'Wallet private key for x402 payments')
+    .option('--x402-url <url>', 'x402 proxy base URL override')
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
     .action(async (options: StatsOptions) => {
       await statsAction(options);
@@ -152,12 +159,20 @@ async function statsAction(options: StatsOptions): Promise<void> {
   const credentials = await resolveCredentials({
     endpointFlag: options.endpoint,
     tokenFlag: options.token,
+    modeFlag: options.mode,
+    walletKeyFlag: options.walletKey,
+    x402BaseUrlFlag: options.x402Url,
     promptOnMissing: true,
     prompt: promptAdapter,
   });
 
-  const redact = (message: string): string =>
-    redactSensitiveText(message, { token: credentials.token });
+  const redact = (message: string): string => {
+    let result = redactSensitiveText(message, { token: credentials.token });
+    if (credentials.walletKey) {
+      result = result.replace(new RegExp(credentials.walletKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '****');
+    }
+    return result;
+  };
   const logger = createLogger({
     quiet: options.quiet === true,
     mode: progressMode,
@@ -169,7 +184,7 @@ async function statsAction(options: StatsOptions): Promise<void> {
     redact,
   });
 
-  const urls = deriveEndpointUrls(credentials.endpoint, credentials.token);
+  const conn = await createConnection(credentials, logger);
 
   const filters = buildFilters({
     dataset,
@@ -179,7 +194,7 @@ async function statsAction(options: StatsOptions): Promise<void> {
     rawFilters: options.filter,
   });
   const limitLabel = limit > 0 ? String(limit) : 'unlimited';
-  logger.info(`Connecting to ${urls.wsUrl} (dataset=${dataset}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
+  logger.info(`Connecting to ${conn.wsUrl} (dataset=${dataset}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
 
   const stats = new LiveStats(dataset);
   const timer = setInterval(() => {
@@ -189,8 +204,8 @@ async function statsAction(options: StatsOptions): Promise<void> {
   try {
     await runStreamRuntime({
       dataset,
-      wsUrl: urls.wsUrl,
-      httpUrl: urls.httpUrl,
+      wsUrl: conn.wsUrl,
+      httpUrl: conn.httpUrl,
       filters,
       normalize: getNormalizer(dataset),
       onEvent: async (event) => {
@@ -200,6 +215,9 @@ async function statsAction(options: StatsOptions): Promise<void> {
       log: (message) => logger.info(message),
       warn: (message) => logger.warn(message),
       idleLogIntervalMs: 15_000,
+      httpFetchFn: conn.fetchFn,
+      refreshWsUrl: conn.refreshWsUrl,
+      ensureCredits: conn.ensureCredits,
     });
   } finally {
     clearInterval(timer);

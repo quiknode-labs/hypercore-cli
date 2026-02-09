@@ -1,8 +1,10 @@
 import { getSavedToken } from './keychain';
+import { getSavedWalletKey } from './wallet-keychain';
 import { readSavedConfig, type SavedConfig } from './storage';
 import { promptAdapter, type PromptAdapter } from '../utils/prompt';
-import type { ResolvedCredentials } from '../types/common';
+import type { ConnectionMode, ResolvedCredentials } from '../types/common';
 import { extractTokenFromEndpoint, QUICKNODE_WSS_EXAMPLE } from '../utils/url';
+import { X402_DEFAULT_BASE_URL, X402_DEFAULT_NETWORK } from '../x402/constants';
 
 const ENDPOINT_PROMPT =
   `Quicknode endpoint (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE}): `;
@@ -15,6 +17,10 @@ export interface ResolveCredentialInput {
   env?: Record<string, string | undefined>;
   readSavedConfigFn?: () => Promise<SavedConfig>;
   getSavedTokenFn?: () => Promise<string | null>;
+  modeFlag?: string;
+  walletKeyFlag?: string;
+  x402BaseUrlFlag?: string;
+  getSavedWalletKeyFn?: () => Promise<string | null>;
 }
 
 export async function resolveCredentials(
@@ -23,10 +29,13 @@ export async function resolveCredentials(
   const environment = input.env ?? process.env;
   const readSavedConfigFn = input.readSavedConfigFn ?? readSavedConfig;
   const getSavedTokenFn = input.getSavedTokenFn ?? getSavedToken;
+  const getSavedWalletKeyFn = input.getSavedWalletKeyFn ?? getSavedWalletKey;
   const savedConfig = await readSavedConfigFn();
   const savedToken = await getSavedTokenFn();
+  const savedWalletKey = await getSavedWalletKeyFn();
   const prompt = input.prompt ?? promptAdapter;
 
+  // Resolve endpoint (QN mode)
   let endpointSource: ResolvedCredentials['endpointSource'];
   let endpoint = input.endpointFlag?.trim();
   if (endpoint) {
@@ -42,6 +51,7 @@ export async function resolveCredentials(
     endpointSource = 'prompt';
   }
 
+  // Resolve token (QN mode)
   let tokenSource: ResolvedCredentials['tokenSource'];
   let token = input.tokenFlag?.trim();
   if (token) {
@@ -64,6 +74,68 @@ export async function resolveCredentials(
     tokenSource = 'endpoint';
   }
 
+  // Resolve wallet key (x402 mode)
+  let walletKey = input.walletKeyFlag?.trim();
+  if (!walletKey && environment.X402_WALLET_KEY?.trim()) {
+    walletKey = environment.X402_WALLET_KEY.trim();
+  }
+  if (!walletKey && savedWalletKey?.trim()) {
+    walletKey = savedWalletKey.trim();
+  }
+
+  // Resolve mode: flag → env → saved → auto-detect
+  let mode: ConnectionMode;
+  const modeInput =
+    input.modeFlag?.trim() ??
+    environment.X402_MODE?.trim() ??
+    savedConfig.mode;
+  if (modeInput === 'x402' || modeInput === 'quicknode') {
+    mode = modeInput;
+  } else if (walletKey && !endpoint) {
+    mode = 'x402';
+  } else if (endpoint) {
+    mode = 'quicknode';
+  } else if (walletKey) {
+    mode = 'x402';
+  } else {
+    mode = 'quicknode';
+  }
+
+  if (mode === 'x402') {
+    // Resolve x402-specific fields
+    const x402BaseUrl =
+      input.x402BaseUrlFlag?.trim() ??
+      environment.X402_BASE_URL?.trim() ??
+      savedConfig.x402BaseUrl ??
+      X402_DEFAULT_BASE_URL;
+
+    const x402Network = savedConfig.x402Network ?? X402_DEFAULT_NETWORK;
+    const x402Chain = savedConfig.x402Chain ?? 'base-sepolia';
+
+    if (input.promptOnMissing !== false && !walletKey) {
+      walletKey = await prompt.ask('Wallet private key (for x402 payments): ', { secret: true });
+    }
+
+    if (!walletKey) {
+      throw new Error(
+        'Missing wallet key for x402 mode. Provide --wallet-key, X402_WALLET_KEY env var, or run `hypercore-cli config`.',
+      );
+    }
+
+    return {
+      mode,
+      endpoint,
+      token,
+      endpointSource,
+      tokenSource,
+      walletKey,
+      x402BaseUrl,
+      x402Network,
+      x402Chain,
+    };
+  }
+
+  // quicknode mode
   if (input.promptOnMissing !== false) {
     if (!endpoint) {
       endpoint = await prompt.ask(ENDPOINT_PROMPT, { secret: true });
@@ -82,6 +154,7 @@ export async function resolveCredentials(
   }
 
   return {
+    mode,
     endpoint,
     token,
     endpointSource,
