@@ -9,11 +9,13 @@ import { createEventFilter } from '../filters/event-filter';
 import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { createWriter } from '../outputs';
 import type { DatasetName, OutputFormat } from '../types/common';
+import { isInteractive } from '../utils/interactive';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
 import { generateOutputPath } from '../utils/output-path';
 import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { runBackfillWizard } from './backfill-wizard';
 
 const DATASETS = getDatasetNames();
 const OUTPUT_FORMATS: OutputFormat[] = ['console', 'json', 'csv', 'sqlite'];
@@ -43,15 +45,18 @@ export function registerBackfillCommand(program: Command): void {
     .command('backfill')
     .description('Fetch historical HyperCore blocks via JSON-RPC and emit normalized events')
     .option('-d, --dataset <dataset>', `Dataset: ${DATASETS.join(', ')}`)
-    .requiredOption('--from <block>', 'Start block (inclusive)')
-    .requiredOption('--to <block>', 'End block (inclusive)')
-    .option('--batch-size <n>', 'JSON-RPC batch size (1-200, default: 100)', String(DEFAULT_BATCH_SIZE))
-    .option('-t, --tokens <tokens>', 'Comma-separated coin filter (e.g. BTC,ETH)')
-    .option('-u, --users <users>', 'Comma-separated user address filter (e.g. 0xabc,0xdef)')
-    .option('-s, --statuses <statuses>', 'Comma-separated order status filter (orders only, e.g. open,filled)')
-    .option('-o, --output <output>', 'Output format: console, json, csv, sqlite', 'console')
+    .option('--from <block>', 'Start block (inclusive)')
+    .option('--to <block>', 'End block (inclusive)')
+    .option('--batch-size <n>', 'JSON-RPC batch size (1-200, default: 100)')
+    .option('-t, --tokens <tokens>', 'Coin filter (single or comma-separated, e.g. BTC or BTC,ETH)')
+    .option('-u, --users <users>', 'User address filter (single or comma-separated, e.g. 0x123 or 0x123,0x456)')
+    .option(
+      '-s, --statuses <statuses>',
+      'Order status filter (orders only, single or comma-separated, e.g. open or open,filled)',
+    )
+    .option('-o, --output <output>', 'Output format: console (default), json, csv, sqlite')
     .option('--path <path>', 'Override auto-generated output file path (csv, json, sqlite)')
-    .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)', '0')
+    .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)')
     .option('-q, --quiet', 'Suppress status logs', false)
     .option('--progress <mode>', 'Progress log mode: text, json', 'text')
     .option(
@@ -71,6 +76,31 @@ function collectRepeated(value: string, previous: string[]): string[] {
 }
 
 async function backfillAction(options: BackfillOptions): Promise<void> {
+  if (isInteractive() && (!options.dataset || !options.from || !options.to)) {
+    const result = await runBackfillWizard({
+      datasetFlag: options.dataset,
+      fromFlag: options.from,
+      toFlag: options.to,
+      batchSizeFlag: options.batchSize,
+      tokensFlag: options.tokens,
+      usersFlag: options.users,
+      statusesFlag: options.statuses,
+      outputFlag: options.output,
+      limitFlag: options.limit,
+    });
+    options.dataset = result.dataset;
+    options.from = result.from;
+    options.to = result.to;
+    options.batchSize = result.batchSize ?? options.batchSize;
+    options.tokens = result.tokens ?? options.tokens;
+    options.users = result.users ?? options.users;
+    options.statuses = result.statuses ?? options.statuses;
+    options.output = result.output;
+    if (result.limit) {
+      options.limit = result.limit;
+    }
+  }
+
   const dataset = await resolveDataset(options.dataset);
   const fromBlock = parseBlockNumber(options.from, '--from');
   const toBlock = parseBlockNumber(options.to, '--to');

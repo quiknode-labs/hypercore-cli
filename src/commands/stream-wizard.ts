@@ -1,0 +1,169 @@
+import { listDatasetDefinitions } from '../datasets/registry';
+import type { DatasetName, OutputFormat } from '../types/common';
+import {
+  selectPrompt,
+  textPrompt,
+  type SelectOption,
+  type SelectPromptConfig,
+  type TextPromptConfig,
+} from '../utils/interactive';
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+export interface WizardResult {
+  dataset: DatasetName;
+  tokens?: string;
+  users?: string;
+  statuses?: string;
+  output: OutputFormat;
+  limit?: string;
+}
+
+export interface WizardContext {
+  /** Pre-supplied flags that skip the corresponding wizard step */
+  datasetFlag?: string;
+  tokensFlag?: string;
+  usersFlag?: string;
+  statusesFlag?: string;
+  outputFlag?: string;
+  limitFlag?: string;
+}
+
+/** Injectable prompt functions for testing */
+export interface WizardPromptFns {
+  selectPrompt: <T>(config: SelectPromptConfig<T>) => Promise<T>;
+  textPrompt: (config: TextPromptConfig) => Promise<string>;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Output format metadata                                             */
+/* ------------------------------------------------------------------ */
+
+const OUTPUT_OPTIONS: SelectOption<OutputFormat>[] = [
+  { value: 'console', label: 'console', description: 'Pretty formatted terminal output' },
+  { value: 'json', label: 'json', description: 'JSON lines (one object per line)' },
+  { value: 'csv', label: 'csv', description: 'CSV format' },
+  { value: 'sqlite', label: 'sqlite', description: 'Save to SQLite database' },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Wizard                                                             */
+/* ------------------------------------------------------------------ */
+
+export async function runStreamWizard(
+  context: WizardContext,
+  promptFns?: Partial<WizardPromptFns>,
+): Promise<WizardResult> {
+  const select = promptFns?.selectPrompt ?? selectPrompt;
+  const text = promptFns?.textPrompt ?? textPrompt;
+
+  // Step 1: Dataset
+  const dataset = context.datasetFlag
+    ? (context.datasetFlag as DatasetName)
+    : await promptDataset(select);
+
+  // Step 2: Token filter
+  const tokens = context.tokensFlag ?? (await promptFilter(text, dataset));
+
+  // Step 3: User filter
+  const users = context.usersFlag ?? (await promptUsers(text));
+
+  // Step 4: Status filter (orders only)
+  let statuses: string | undefined = context.statusesFlag;
+  if (!statuses && dataset === 'orders') {
+    statuses = await promptStatuses(text);
+  }
+
+  // Step 5: Output format
+  const output = context.outputFlag
+    ? (context.outputFlag as OutputFormat)
+    : await promptOutput(select);
+
+  // Step 6: Limit
+  const limit = context.limitFlag ?? (await promptLimit(text));
+
+  return { dataset, tokens, users, statuses, output, limit };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Individual prompt steps                                            */
+/* ------------------------------------------------------------------ */
+
+async function promptDataset(
+  select: <T>(config: SelectPromptConfig<T>) => Promise<T>,
+): Promise<DatasetName> {
+  const definitions = listDatasetDefinitions();
+  const options: SelectOption<DatasetName>[] = definitions.map((def) => ({
+    value: def.name,
+    label: def.displayName.toLowerCase().padEnd(16),
+    description: def.description,
+  }));
+
+  return select({
+    message: 'Select dataset',
+    options,
+  });
+}
+
+async function promptFilter(
+  text: (config: TextPromptConfig) => Promise<string>,
+  dataset: DatasetName,
+): Promise<string | undefined> {
+  const label = dataset === 'writer_actions' ? 'tokens' : 'coins';
+  const example = dataset === 'writer_actions' ? 'e.g. 124 or 124,125' : 'e.g. BTC or BTC,ETH';
+  const answer = await text({
+    message: `Filter by ${label} (${example}, or 'all')`,
+    defaultValue: 'all',
+  });
+  return answer.toLowerCase() === 'all' ? undefined : answer || undefined;
+}
+
+async function promptUsers(
+  text: (config: TextPromptConfig) => Promise<string>,
+): Promise<string | undefined> {
+  const answer = await text({
+    message: "Filter by users (e.g. 0x123 or 0x123,0x456, or 'all')",
+    defaultValue: 'all',
+  });
+  return answer.toLowerCase() === 'all' ? undefined : answer || undefined;
+}
+
+async function promptStatuses(
+  text: (config: TextPromptConfig) => Promise<string>,
+): Promise<string | undefined> {
+  const answer = await text({
+    message: "Filter by statuses (e.g. open or open,filled,canceled, or 'all')",
+    defaultValue: 'all',
+  });
+  return answer.toLowerCase() === 'all' ? undefined : answer || undefined;
+}
+
+async function promptOutput(
+  select: <T>(config: SelectPromptConfig<T>) => Promise<T>,
+): Promise<OutputFormat> {
+  return select({
+    message: 'Output format',
+    options: OUTPUT_OPTIONS,
+  });
+}
+
+async function promptLimit(
+  text: (config: TextPromptConfig) => Promise<string>,
+): Promise<string | undefined> {
+  const answer = await text({
+    message: 'Event limit (number, or 0 for unlimited)',
+    defaultValue: '0',
+  });
+  const normalized = answer.trim();
+  if (!normalized || normalized === '0') {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(normalized, 10);
+  if (!/^\d+$/.test(normalized) || Number.isNaN(parsed) || parsed < 0) {
+    throw new Error(`Invalid limit '${answer}'. Must be >= 0.`);
+  }
+  return normalized;
+}

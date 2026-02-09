@@ -7,11 +7,13 @@ import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { runStreamRuntime } from '../core/stream-runtime';
 import { createWriter } from '../outputs';
 import type { DatasetName, OutputFormat } from '../types/common';
+import { isInteractive } from '../utils/interactive';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
 import { generateOutputPath } from '../utils/output-path';
 import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { runStreamWizard } from './stream-wizard';
 
 const DATASETS = getDatasetNames();
 const OUTPUT_FORMATS: OutputFormat[] = ['console', 'json', 'csv', 'sqlite'];
@@ -37,10 +39,13 @@ export function registerStreamCommand(program: Command): void {
     .command('stream')
     .description('Stream HyperCore datasets')
     .option('-d, --dataset <dataset>', `Dataset: ${DATASETS.join(', ')}`)
-    .option('-t, --tokens <tokens>', 'Comma-separated coin filter (e.g. BTC,ETH)')
-    .option('-u, --users <users>', 'Comma-separated user address filter (e.g. 0xabc,0xdef)')
-    .option('-s, --statuses <statuses>', 'Comma-separated order status filter (orders only, e.g. open,filled)')
-    .option('-o, --output <output>', 'Output format: console, json, csv, sqlite', 'console')
+    .option('-t, --tokens <tokens>', 'Coin filter (single or comma-separated, e.g. BTC or BTC,ETH)')
+    .option('-u, --users <users>', 'User address filter (single or comma-separated, e.g. 0x123 or 0x123,0x456)')
+    .option(
+      '-s, --statuses <statuses>',
+      'Order status filter (orders only, single or comma-separated, e.g. open or open,filled)',
+    )
+    .option('-o, --output <output>', 'Output format: console (default), json, csv, sqlite')
     .option('--path <path>', 'Override auto-generated output file path (csv, json, sqlite)')
     .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)', '0')
     .option('-q, --quiet', 'Suppress status logs', false)
@@ -62,6 +67,26 @@ function collectRepeated(value: string, previous: string[]): string[] {
 }
 
 async function streamAction(options: StreamOptions): Promise<void> {
+  // Interactive wizard when running in a TTY with no dataset flag
+  if (isInteractive() && !options.dataset) {
+    const result = await runStreamWizard({
+      datasetFlag: options.dataset,
+      tokensFlag: options.tokens,
+      usersFlag: options.users,
+      statusesFlag: options.statuses,
+      outputFlag: options.output,
+      limitFlag: options.limit === '0' ? undefined : options.limit,
+    });
+    options.dataset = result.dataset;
+    options.tokens = result.tokens ?? options.tokens;
+    options.users = result.users ?? options.users;
+    options.statuses = result.statuses ?? options.statuses;
+    options.output = result.output;
+    if (result.limit) {
+      options.limit = result.limit;
+    }
+  }
+
   const dataset = await resolveDataset(options.dataset);
   const output = resolveOutput(options.output);
   const limit = resolveLimit(options.limit);

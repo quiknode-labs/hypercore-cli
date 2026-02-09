@@ -31,6 +31,7 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 | **Server-side filtering** | Filter by coin, user address, or order status before data leaves the server |
 | **Automation-ready** | `--progress json` emits machine-readable telemetry to stderr for scripts and pipelines |
 | **Secure credential handling** | OS keychain storage, 4-tier credential resolution, full token redaction in logs |
+| **Interactive wizards** | Stream and backfill can run with step-by-step prompts for dataset selection, filters, output format, limits, and block ranges |
 
 ---
 
@@ -126,12 +127,46 @@ hypercore-cli sample --dataset twap      # Inspect TWAP payload structure
 
 Subscribe to live data with optional server-side filtering. Use `--help` to see all flags and defaults.
 
+#### Interactive mode
+
+Run `stream` with no flags to launch the interactive wizard:
+
+```bash
+hypercore-cli stream
+```
+
+```
+? Select dataset:
+❯ orders           - Order lifecycle events
+  trades           - Executed fills with price and size
+  events           - System events and balance updates
+  book updates     - Level 2 order book updates
+  twap             - TWAP order status updates
+  writer actions   - System writer actions and bridge operations
+
+? Filter by coins (e.g. BTC or BTC,ETH, or 'all'): BTC,ETH
+? Filter by users (e.g. 0x123 or 0x123,0x456, or 'all'): all
+? Filter by statuses (e.g. open or open,filled,canceled, or 'all'): all
+? Output format:
+❯ console - Pretty formatted terminal output
+  json    - JSON lines (one object per line)
+  csv     - CSV format
+  sqlite  - Save to SQLite database
+? Event limit (number, or 0 for unlimited): 50
+
+🚀 Streaming orders for BTC, ETH...
+```
+
+The wizard detects when you are in a terminal (TTY) and walks through dataset selection, filters, output format, and event limit step by step. Any flag you provide on the command line skips the corresponding wizard step.
+
+#### Flag-based usage
+
 ```bash
 # Stream all orders
 hypercore-cli stream --dataset orders
 
 # Filter by multiple coins and user addresses
-hypercore-cli stream --dataset trades --tokens BTC,ETH --users 0xabc...,0xdef...
+hypercore-cli stream --dataset trades --tokens BTC,ETH --users 0x123,0x456
 
 # Filter orders by status (orders dataset only)
 hypercore-cli stream --dataset orders --statuses open,filled
@@ -154,9 +189,9 @@ hypercore-cli stream --dataset trades --output sqlite --path ./trades.db --limit
 | Flag | Description | Default |
 |---|---|---|
 | `--dataset` | Dataset to stream (see [Datasets](#datasets)) | _(prompted)_ |
-| `--tokens` | Filter by coins, e.g. `BTC,ETH` | _(none)_ |
-| `--users` | Filter by user addresses, e.g. `0xabc,0xdef` | _(none)_ |
-| `--statuses` | Filter by order status (orders only), e.g. `open,filled` | _(none)_ |
+| `--tokens` | Filter by coins, e.g. `BTC` or `BTC,ETH` | _(none)_ |
+| `--users` | Filter by user addresses, e.g. `0x123` or `0x123,0x456` | _(none)_ |
+| `--statuses` | Filter by order status (orders only), e.g. `open` or `open,filled` | _(none)_ |
 | `--output` | Output format: `console`, `json`, `csv`, `sqlite` | `console` |
 | `--limit` | Stop after N events (0 = unlimited) | `0` |
 | `--path` | Override auto-generated output file path (csv, json, sqlite) | _(auto-generated)_ |
@@ -167,6 +202,39 @@ If the connection drops, the CLI automatically reconnects with exponential backo
 ### `backfill` — Historical block range ingestion
 
 Fetch past data via JSON-RPC. Useful for research, backtesting, or seeding a local database. Use `--help` to see all flags and defaults.
+
+#### Interactive mode
+
+Run `backfill` with missing required inputs to launch the interactive wizard:
+
+```bash
+hypercore-cli backfill
+```
+
+```
+? Select dataset:
+❯ orders           - Order lifecycle events
+  trades           - Executed fills with price and size
+  events           - System events and balance updates
+  book updates     - Level 2 order book updates
+  twap             - TWAP order status updates
+  writer actions   - System writer actions and bridge operations
+
+? Start block (inclusive) (number): 887643588
+? End block (inclusive) (number): 887643688
+? Batch size (1-200) (100): 100
+? Filter by coins (e.g. BTC or BTC,ETH, or 'all'): BTC
+? Filter by users (e.g. 0x123 or 0x123,0x456, or 'all'): all
+? Filter by statuses (e.g. open or open,filled,canceled, or 'all'): filled
+? Output format:
+❯ console - Pretty formatted terminal output
+  json    - JSON lines (one object per line)
+  csv     - CSV format
+  sqlite  - Save to SQLite database
+? Event limit (number, or 0 for unlimited): 0
+```
+
+The wizard runs in a terminal (TTY) when `--dataset`, `--from`, or `--to` is missing. Any flag you provide skips the corresponding wizard step.
 
 ```bash
 # Export a block range as JSON (auto-generates output file)
@@ -197,8 +265,8 @@ hypercore-cli backfill --dataset writer_actions --from 887643588 --to 887643688 
 
 | Flag | Description | Default |
 |---|---|---|
-| `--from` | Start block number (inclusive, required) | — |
-| `--to` | End block number (inclusive, required) | — |
+| `--from` | Start block number (inclusive) | _(prompted in TTY; required otherwise)_ |
+| `--to` | End block number (inclusive) | _(prompted in TTY; required otherwise)_ |
 | `--batch-size` | JSON-RPC batch size (1–200) | `100` |
 | `--output` | Output format: `console`, `json`, `csv`, `sqlite` | `console` |
 | `--path` | Override auto-generated output file path (csv, json, sqlite) | _(auto-generated)_ |

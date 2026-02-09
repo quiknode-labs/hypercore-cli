@@ -118,9 +118,12 @@ export function registerStatsCommand(program: Command): void {
     .command('stats')
     .description('Stream live statistics for a dataset')
     .option('-d, --dataset <dataset>', `Dataset: ${DATASETS.join(', ')}`)
-    .option('-t, --tokens <tokens>', 'Comma-separated coin filter (e.g. BTC,ETH)')
-    .option('-u, --users <users>', 'Comma-separated user address filter (e.g. 0xabc,0xdef)')
-    .option('-s, --statuses <statuses>', 'Comma-separated order status filter (orders only, e.g. open,filled)')
+    .option('-t, --tokens <tokens>', 'Coin filter (single or comma-separated, e.g. BTC or BTC,ETH)')
+    .option('-u, --users <users>', 'User address filter (single or comma-separated, e.g. 0x123 or 0x123,0x456)')
+    .option(
+      '-s, --statuses <statuses>',
+      'Order status filter (orders only, single or comma-separated, e.g. open or open,filled)',
+    )
     .option('--interval <seconds>', 'Snapshot print interval in seconds', '5')
     .option('-l, --limit <n>', 'Stop after N emitted events (0=unlimited)', '0')
     .option('-q, --quiet', 'Suppress status logs', false)
