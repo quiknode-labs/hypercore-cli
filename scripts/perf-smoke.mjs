@@ -14,7 +14,7 @@ const dbPath = path.join(tempDir, 'perf-smoke.db');
 const writer = createWriter({
   format: 'sqlite',
   dataset: 'orders',
-  dbPath,
+  filePath: dbPath,
 });
 
 let initialized = false;
