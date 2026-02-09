@@ -524,8 +524,6 @@ pnpm perf:smoke   # SQLite writer performance smoke test
 pnpm pack:dry-run   # Verify tarball contents before publish
 ```
 
-See [RELEASE.md](RELEASE.md) for the full publish checklist.
-
 ---
 
 ## Architecture
@@ -543,14 +541,6 @@ The CLI is built on a **WebSocket-first** design for real-time streaming with **
 
 - [ ] gRPC transport integration (higher throughput, compression)
 - [ ] `blocks` dataset support (raw L1 transactions, gRPC-only)
-
----
-
-## Documentation
-
-| Document | Description |
-|---|---|
-| [RELEASE.md](RELEASE.md) | Publish checklist |
 
 ---
 

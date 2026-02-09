@@ -1,7 +1,21 @@
 {
   "name": "@quicknode/hypercore-cli",
   "version": "0.1.0",
-  "description": "Developer-friendly CLI for streaming HyperCore datasets from Quicknode",
+  "description": "Developer-friendly CLI for streaming and backfilling HyperCore datasets from Quicknode",
+  "keywords": [
+    "quicknode",
+    "hypercore",
+    "hyperliquid",
+    "cli",
+    "websocket",
+    "json-rpc",
+    "backfill",
+    "market-data",
+    "trading",
+    "cryptocurrency",
+    "sqlite",
+    "typescript"
+  ],
   "license": "MIT",
   "author": "Quicknode",
   "homepage": "https://github.com/quiknode-labs/hypercore-cli",
