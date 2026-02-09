@@ -141,6 +141,9 @@ async function streamAction(options: StreamOptions): Promise<void> {
     logger.info(
       `Stream done: emitted=${emittedCount}, runtime_s=${runtimeSeconds.toFixed(3)}, eps_avg=${avgEps.toFixed(2)}`,
     );
+    if (filePath) {
+      logger.info(`Output written to: ${filePath}`);
+    }
   }
 }
 

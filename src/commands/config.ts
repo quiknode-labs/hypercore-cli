@@ -58,6 +58,22 @@ export function registerConfigCommand(program: Command): void {
         return;
       }
 
+      const saved = await readSavedConfig();
+      const existingToken = await getSavedToken();
+
+      if (saved.endpoint) {
+        process.stdout.write('\nYou already have a saved endpoint:\n');
+        process.stdout.write(`  Endpoint: ${redactEndpointUrl(saved.endpoint)}\n`);
+        process.stdout.write(`  Token: ${maskToken(existingToken)}\n\n`);
+        process.stdout.write('To view full details, use: hypercore-cli config --show\n');
+
+        const answer = await promptAdapter.ask('Do you want to override? (y/N): ');
+        if (answer.toLowerCase() !== 'y') {
+          return;
+        }
+        process.stdout.write('\n');
+      }
+
       process.stdout.write('Quicknode onboarding:\n');
       process.stdout.write('1) Create or sign in to your Quicknode account.\n');
       process.stdout.write('2) Create a Hyperliquid endpoint.\n');

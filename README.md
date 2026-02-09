@@ -94,6 +94,7 @@ hypercore-cli backfill --help
 hypercore-cli stats --help
 hypercore-cli query --help
 hypercore-cli sample --help
+hypercore-cli config --help
 ```
 
 ### `config` — Credential management
@@ -463,12 +464,10 @@ See [RELEASE.md](RELEASE.md) for the full publish checklist.
 
 The CLI is built on a **WebSocket-first** design for real-time streaming with **JSON-RPC** for historical backfill. Key architectural choices:
 
-- **Auto-reconnect with gap recovery** — on disconnect, the CLI backfills missed blocks via `hl_getBatchBlocks` before resuming the live stream (see [ADR-002](ADR.md#adr-002-auto-backfill-on-reconnection))
+- **Auto-reconnect with gap recovery** — on disconnect, the CLI backfills missed blocks via `hl_getBatchBlocks` before resuming the live stream
 - **Shared stream runtime** — `stream` and `stats` share the same reconnect/backfill pipeline, so reliability improvements apply everywhere
 - **Central dataset registry** — adding a new dataset is mechanical: register it, write a normalizer, and all commands + outputs work automatically
 - **Bounded dedupe memory** — long-running streams won't leak memory; dedupe keys are pruned by block retention window
-
-For the full list of architecture decisions, see [ADR.md](ADR.md).
 
 ---
 
@@ -483,11 +482,7 @@ For the full list of architecture decisions, see [ADR.md](ADR.md).
 
 | Document | Description |
 |---|---|
-| [DOCS_INDEX.md](DOCS_INDEX.md) | Full documentation index |
-| [PROJECT.md](PROJECT.md) | Complete project specification |
-| [ADR.md](ADR.md) | Architecture Decision Records |
 | [RELEASE.md](RELEASE.md) | Publish checklist |
-| [PROGRESS.md](PROGRESS.md) | Implementation progress tracker |
 
 ---
 

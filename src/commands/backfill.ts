@@ -161,6 +161,9 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   } finally {
     await writer.flush();
     await writer.close();
+    if (filePath) {
+      logger.info(`Output written to: ${filePath}`);
+    }
   }
 }
 
