@@ -9,7 +9,13 @@ import {
   isKeychainAvailable,
   saveToken,
 } from '../config/keychain';
-import { clearWalletKey, getSavedWalletKey, saveWalletKey } from '../config/wallet-keychain';
+import {
+  clearWalletKey,
+  getSavedWalletKey,
+  getSavedWalletKeyStorageBackend,
+  getWalletKeyFilePath,
+  saveWalletKey,
+} from '../config/wallet-keychain';
 import { getConfigPath, readSavedConfig, writeSavedConfig, clearSavedConfig } from '../config/storage';
 import { maskToken } from '../config/credentials';
 import { promptAdapter } from '../utils/prompt';
@@ -29,7 +35,7 @@ interface ConfigOptions {
 export function registerConfigCommand(program: Command): void {
   program
     .command('config')
-    .description('Configure Quicknode endpoint and API token')
+    .description('Configure Quicknode endpoint or x402 micropayments settings')
     .option('--show', 'Show current saved config (token masked)')
     .option('--clear', 'Clear saved endpoint and token')
     .action(async (options: ConfigOptions) => {
@@ -45,6 +51,7 @@ export function registerConfigCommand(program: Command): void {
         const saved = await readSavedConfig();
         const token = await getSavedToken();
         const walletKey = await getSavedWalletKey();
+        const walletStorageBackend = await getSavedWalletKeyStorageBackend();
         const keychainAvailable = await isKeychainAvailable();
         const preferredBackend = await getPreferredTokenStorageBackend();
         const savedBackend = await getSavedTokenStorageBackend();
@@ -77,6 +84,34 @@ export function registerConfigCommand(program: Command): void {
           process.stdout.write(`  Base URL: ${saved.x402BaseUrl ?? X402_DEFAULT_BASE_URL}\n`);
           process.stdout.write(`  Network: ${saved.x402Network ?? X402_DEFAULT_NETWORK}\n`);
           process.stdout.write(`  Payment chain: ${saved.x402Chain ?? 'base-sepolia'}\n`);
+          process.stdout.write(`  Wallet storage: ${walletStorageBackend}\n`);
+          if (walletStorageBackend === 'file') {
+            process.stdout.write(`  Wallet key file: ${getWalletKeyFilePath()} (permissions 600)\n`);
+          }
+        }
+
+        // Warn about environment variable overrides that affect runtime behavior
+        const envOverrides: string[] = [];
+        if (process.env.QUICKNODE_ENDPOINT) {
+          envOverrides.push(`  QUICKNODE_ENDPOINT=${redactEndpointUrl(process.env.QUICKNODE_ENDPOINT)}`);
+        }
+        if (process.env.QUICKNODE_TOKEN) {
+          envOverrides.push(`  QUICKNODE_TOKEN=${maskToken(process.env.QUICKNODE_TOKEN)}`);
+        }
+        if (process.env.X402_WALLET_KEY) {
+          envOverrides.push(`  X402_WALLET_KEY=${maskToken(process.env.X402_WALLET_KEY)}`);
+        }
+        if (process.env.X402_MODE) {
+          envOverrides.push(`  X402_MODE=${process.env.X402_MODE}`);
+        }
+        if (process.env.X402_BASE_URL) {
+          envOverrides.push(`  X402_BASE_URL=${process.env.X402_BASE_URL}`);
+        }
+        if (envOverrides.length > 0) {
+          process.stdout.write(`\nNote: Environment variables detected that override saved config at runtime:\n`);
+          for (const line of envOverrides) {
+            process.stdout.write(`${line}\n`);
+          }
         }
         return;
       }
@@ -101,8 +136,8 @@ export function registerConfigCommand(program: Command): void {
       }
 
       process.stdout.write('Select connection mode:\n');
-      process.stdout.write('  1) QuickNode Direct - use your QuickNode endpoint\n');
-      process.stdout.write('  2) x402 Micropayments - pay per request with USDC (no QN account needed)\n');
+      process.stdout.write('  1) Quicknode Direct - use your Quicknode endpoint\n');
+      process.stdout.write('  2) x402 Micropayments - pay per request with USDC (no Quicknode account needed)\n');
       const modeAnswer = await promptAdapter.ask('Mode (1/2): ');
       const isX402 = modeAnswer.trim() === '2';
       process.stdout.write('\n');
@@ -137,15 +172,21 @@ export function registerConfigCommand(program: Command): void {
           x402Chain: chain,
         });
         await saveWalletKey(walletKeyInput);
+        const walletStorageBackend = await getSavedWalletKeyStorageBackend();
 
         process.stdout.write(`\nSaved x402 configuration to ${getConfigPath()}\n`);
         process.stdout.write(`  Wallet address: ${walletAddress}\n`);
         process.stdout.write(`  Payment chain: ${chain}\n`);
         process.stdout.write(`  Base URL: ${baseUrl ?? X402_DEFAULT_BASE_URL}\n`);
+        if (walletStorageBackend === 'keychain') {
+          process.stdout.write('  Wallet key storage: system keychain\n');
+        } else if (walletStorageBackend === 'file') {
+          process.stdout.write(`  Wallet key storage: ${getWalletKeyFilePath()} (permissions 600)\n`);
+        }
         return;
       }
 
-      // QuickNode Direct mode
+      // Quicknode Direct mode
       process.stdout.write('Quicknode onboarding:\n');
       process.stdout.write('1) Create or sign in to your Quicknode account.\n');
       process.stdout.write('2) Create a Hyperliquid endpoint.\n');

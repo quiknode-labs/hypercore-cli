@@ -12,6 +12,7 @@ import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
 import { QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
 import { createConnection } from '../x402/connection';
+import { captureX402UsageBaseline, logX402UsageSummary } from '../x402/usage';
 
 const DATASETS = getDatasetNames();
 
@@ -185,6 +186,7 @@ async function statsAction(options: StatsOptions): Promise<void> {
   });
 
   const conn = await createConnection(credentials, logger);
+  const creditUsageBaseline = await captureX402UsageBaseline(conn, logger);
 
   const filters = buildFilters({
     dataset,
@@ -225,6 +227,8 @@ async function statsAction(options: StatsOptions): Promise<void> {
     logger.info(
       `Stats done: total=${finalSnapshot.total}, runtime_s=${finalSnapshot.runtimeSeconds.toFixed(3)}, eps_avg=${finalSnapshot.eventsPerSecondAvg.toFixed(2)}`,
     );
+    await logX402UsageSummary(conn, creditUsageBaseline, logger);
+    conn.cleanup?.();
   }
 }
 

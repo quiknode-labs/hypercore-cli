@@ -16,6 +16,7 @@ import { resolveProgressMode } from '../utils/progress';
 import { generateOutputPath } from '../utils/output-path';
 import { QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
 import { createConnection } from '../x402/connection';
+import { captureX402UsageBaseline, logX402UsageSummary } from '../x402/usage';
 import { runBackfillWizard } from './backfill-wizard';
 
 const DATASETS = getDatasetNames();
@@ -155,6 +156,7 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
     redact,
   });
   const conn = await createConnection(credentials, logger);
+  const creditUsageBaseline = await captureX402UsageBaseline(conn, logger);
 
   const filters = buildFilters({
     dataset,
@@ -209,6 +211,8 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
     if (filePath) {
       logger.info(`Output written to: ${filePath}`);
     }
+    await logX402UsageSummary(conn, creditUsageBaseline, logger);
+    conn.cleanup?.();
   }
 }
 

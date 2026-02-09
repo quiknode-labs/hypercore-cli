@@ -88,13 +88,21 @@ Pay per request with USDC on Base Sepolia — no Quicknode account required. You
    ```bash
    hypercore-cli config
    ```
-2. Or set your wallet key as an environment variable:
+   You will be prompted for:
+   - Wallet private key (required) (starts with `0x`, will be hidden as you type)
+   - Payment chain (`base-sepolia` default; press Enter to keep default)
+   - x402 proxy URL (default prefilled; press Enter to keep default)
+   After saving, the CLI prints where the wallet key was stored (system keychain, or `~/.hypercore-cli/wallet-key` with `0600` permissions).
+2. Or skip interactive setup and run with env vars + x402 mode:
    ```bash
    export X402_WALLET_KEY=0x...   # your private key — never paste in plain text in shared commands
    hypercore-cli stream --dataset trades --limit 10 --mode x402
    ```
+   See [x402 Micropayments](#x402-micropayments) below for full details.
 
 The CLI authenticates via [SIWE](https://eips.ethereum.org/EIPS/eip-4361), automatically handles x402 payment negotiation, and manages credit lifecycle — all transparent to you.
+
+> If you need testnet USDC on Base Sepolia, check the [Getting testnet USDC (Base Sepolia)](#getting-testnet-usdc-base-sepolia) section.
 
 ### Step 3 — Stream your first data
 
@@ -122,6 +130,7 @@ hypercore-cli stats --help
 hypercore-cli query --help
 hypercore-cli sample --help
 hypercore-cli config --help
+hypercore-cli credits --help
 ```
 
 ### `config` — Credential management
@@ -157,6 +166,18 @@ Credentials can also be provided via CLI flags or environment variables. Resolut
 > **Security tip:** Avoid passing `--wallet-key` directly on the command line — it may be visible in shell history and process listings. Use the `X402_WALLET_KEY` environment variable or save it via `hypercore-cli config` instead.
 
 **Auto-detection:** If only a wallet key is configured, the CLI defaults to x402 mode. If only a Quicknode endpoint is configured, it defaults to Quicknode Direct. Use `--mode` to override.
+
+If both Quicknode and x402 credentials are present, interactive runs prompt you to choose `quicknode` or `x402` (unless mode is explicitly set via `--mode` or `X402_MODE`).
+
+### `credits` — Check x402 credit balance
+
+Check x402 credits without triggering a paid request:
+
+```bash
+hypercore-cli credits
+hypercore-cli credits --json
+hypercore-cli credits --wallet-key 0x... --x402-url https://x402.quiknode-cf.pro
+```
 
 ### `sample` — Explore datasets before ingestion
 
@@ -198,6 +219,7 @@ hypercore-cli stream
   csv     - CSV format
   sqlite  - Save to SQLite database
 ? Event limit (number, or 0 for unlimited): 50
+✔ Select connection mode: quicknode
 
 🚀 Streaming orders for BTC, ETH...
 ```
@@ -216,8 +238,8 @@ hypercore-cli stream --dataset trades --tokens BTC,ETH --users 0x123,0x456
 # Filter orders by status (orders dataset only)
 hypercore-cli stream --dataset orders --statuses open,filled
 
-# JSON output to auto-generated file, capped at 50 events
-hypercore-cli stream --dataset book_updates --output json --limit 50
+# JSON output to auto-generated file, capped at 50 events, with x402 payments
+hypercore-cli stream --dataset book_updates --output json --limit 50 --mode x402
 
 # Force JSON output to stdout instead of file
 hypercore-cli stream --dataset trades --output json --limit 10 --stdout
@@ -280,17 +302,17 @@ hypercore-cli backfill
   csv     - CSV format
   sqlite  - Save to SQLite database
 ? Event limit (number, or 0 for unlimited): 0
+✔ Select connection mode: x402
 ```
 
 The wizard runs in a terminal (TTY) when `--dataset`, `--from`, or `--to` is missing. Any flag you provide skips the corresponding wizard step.
-
 ```bash
 # Export a block range as JSON (auto-generates output file)
 hypercore-cli backfill --dataset orders --from 887643588 --to 887643688 --output json
 
-# Filter and export to CSV
+# Filter and export to CSV with x402 payments
 hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
-  --tokens BTC,ETH --output csv
+  --tokens BTC,ETH --output csv --mode x402
 
 # Force output to stdout for piping
 hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
@@ -320,6 +342,9 @@ hypercore-cli backfill --dataset writer_actions --from 887643588 --to 887643688 
 | `--path` | Override auto-generated output file path (csv, json, sqlite) | _(auto-generated)_ |
 | `--stdout` | Write csv/json to stdout instead of auto-generated file | `false` |
 | `--progress` | Progress output mode: `text`, `json` | `text` |
+| `--mode` | Connection mode: `quicknode`, `x402` | _(auto-detected)_ |
+| `--wallet-key` | Wallet private key for x402 payments | _(none)_ |
+| `--x402-url` | x402 proxy base URL override | _(default proxy)_ |
 
 ### `stats` — Live stream statistics
 
@@ -539,6 +564,9 @@ hypercore-cli stream --dataset trades --limit 20 --mode x402
 # Backfill with x402
 hypercore-cli backfill --dataset trades --from 0 --to 5 --mode x402
 
+# Check credits without making a paid request
+hypercore-cli credits
+
 # Save x402 credentials for reuse (no env var needed after this)
 hypercore-cli config   # select "x402 Micropayments" and enter your wallet key
 hypercore-cli stream --dataset trades --limit 20   # auto-detects x402 mode
@@ -579,7 +607,10 @@ hypercore-cli stream --endpoint wss://... --token your-token --dataset trades
 
 ### Keychain unavailable
 
-If your environment doesn't support a system keychain (headless servers, containers), the CLI automatically falls back to storing the token in `~/.hypercore-cli/token` with `0600` permissions. No action needed.
+If your environment doesn't support a system keychain (headless servers, containers), the CLI automatically falls back to local files with `0600` permissions:
+
+- Quicknode token: `~/.hypercore-cli/token`
+- x402 wallet key: `~/.hypercore-cli/wallet-key`
 
 ### `better-sqlite3` native binding errors
 

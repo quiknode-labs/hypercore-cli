@@ -3,6 +3,7 @@ import { getSavedWalletKey } from './wallet-keychain';
 import { readSavedConfig, type SavedConfig } from './storage';
 import { promptAdapter, type PromptAdapter } from '../utils/prompt';
 import type { ConnectionMode, ResolvedCredentials } from '../types/common';
+import { isInteractive, selectPrompt, type SelectPromptConfig } from '../utils/interactive';
 import { extractTokenFromEndpoint, QUICKNODE_WSS_EXAMPLE } from '../utils/url';
 import { X402_DEFAULT_BASE_URL, X402_DEFAULT_NETWORK } from '../x402/constants';
 
@@ -14,6 +15,8 @@ export interface ResolveCredentialInput {
   tokenFlag?: string;
   promptOnMissing?: boolean;
   prompt?: PromptAdapter;
+  isInteractiveFn?: () => boolean;
+  selectModePromptFn?: (config: SelectPromptConfig<ConnectionMode>) => Promise<ConnectionMode>;
   env?: Record<string, string | undefined>;
   readSavedConfigFn?: () => Promise<SavedConfig>;
   getSavedTokenFn?: () => Promise<string | null>;
@@ -30,6 +33,8 @@ export async function resolveCredentials(
   const readSavedConfigFn = input.readSavedConfigFn ?? readSavedConfig;
   const getSavedTokenFn = input.getSavedTokenFn ?? getSavedToken;
   const getSavedWalletKeyFn = input.getSavedWalletKeyFn ?? getSavedWalletKey;
+  const isInteractiveFn = input.isInteractiveFn ?? isInteractive;
+  const selectModePromptFn = input.selectModePromptFn ?? selectPrompt;
   const savedConfig = await readSavedConfigFn();
   const savedToken = await getSavedTokenFn();
   const savedWalletKey = await getSavedWalletKeyFn();
@@ -85,12 +90,12 @@ export async function resolveCredentials(
 
   // Resolve mode: flag → env → saved → auto-detect
   let mode: ConnectionMode;
-  const modeInput =
-    input.modeFlag?.trim() ??
-    environment.X402_MODE?.trim() ??
-    savedConfig.mode;
-  if (modeInput === 'x402' || modeInput === 'quicknode') {
-    mode = modeInput;
+  const explicitModeInput = input.modeFlag?.trim() ?? environment.X402_MODE?.trim();
+  const savedModeInput = savedConfig.mode;
+  if (explicitModeInput === 'x402' || explicitModeInput === 'quicknode') {
+    mode = explicitModeInput;
+  } else if (savedModeInput === 'x402' || savedModeInput === 'quicknode') {
+    mode = savedModeInput;
   } else if (walletKey && !endpoint) {
     mode = 'x402';
   } else if (endpoint) {
@@ -99,6 +104,17 @@ export async function resolveCredentials(
     mode = 'x402';
   } else {
     mode = 'quicknode';
+  }
+
+  const shouldPromptForMode = (
+    input.promptOnMissing !== false &&
+    isInteractiveFn() &&
+    !explicitModeInput &&
+    Boolean(endpoint) &&
+    Boolean(walletKey)
+  );
+  if (shouldPromptForMode) {
+    mode = await promptConnectionMode(selectModePromptFn, mode);
   }
 
   if (mode === 'x402') {
@@ -160,6 +176,42 @@ export async function resolveCredentials(
     endpointSource,
     tokenSource,
   };
+}
+
+async function promptConnectionMode(
+  selectModePromptFn: (config: SelectPromptConfig<ConnectionMode>) => Promise<ConnectionMode>,
+  defaultMode: ConnectionMode,
+): Promise<ConnectionMode> {
+  const options = defaultMode === 'quicknode'
+    ? [
+        {
+          value: 'quicknode' as const,
+          label: 'quicknode',
+          description: 'Use Quicknode endpoint/token credentials',
+        },
+        {
+          value: 'x402' as const,
+          label: 'x402',
+          description: 'Use wallet-based x402 micropayments',
+        },
+      ]
+    : [
+        {
+          value: 'x402' as const,
+          label: 'x402',
+          description: 'Use wallet-based x402 micropayments',
+        },
+        {
+          value: 'quicknode' as const,
+          label: 'quicknode',
+          description: 'Use Quicknode endpoint/token credentials',
+        },
+      ];
+
+  return selectModePromptFn({
+    message: 'Select connection mode',
+    options,
+  });
 }
 
 export function maskToken(token: string | null): string {

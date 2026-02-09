@@ -2,6 +2,7 @@ import { Command } from 'commander';
 
 import { registerBackfillCommand } from './commands/backfill';
 import { registerConfigCommand } from './commands/config';
+import { registerCreditsCommand } from './commands/credits';
 import { registerQueryCommand } from './commands/query';
 import { registerSampleCommand } from './commands/sample';
 import { registerStatsCommand } from './commands/stats';
@@ -17,6 +18,7 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
     .version('0.1.0');
 
   registerConfigCommand(program);
+  registerCreditsCommand(program);
   registerStreamCommand(program);
   registerBackfillCommand(program);
   registerSampleCommand(program);

@@ -6,6 +6,8 @@ const SERVICE_NAME = 'quicknode.hypercore-cli';
 const ACCOUNT_NAME = 'wallet-private-key';
 const WALLET_KEY_FILE_PATH = path.join(homedir(), '.hypercore-cli', 'wallet-key');
 
+export type WalletKeyStorageBackend = 'keychain' | 'file' | 'none';
+
 interface KeytarLike {
   getPassword(service: string, account: string): Promise<string | null>;
   setPassword(service: string, account: string, password: string): Promise<void>;
@@ -50,6 +52,24 @@ export async function saveWalletKey(key: string): Promise<void> {
 export async function clearWalletKey(): Promise<void> {
   await clearKeychainWalletKey();
   await clearFileWalletKey();
+}
+
+export function getWalletKeyFilePath(): string {
+  return WALLET_KEY_FILE_PATH;
+}
+
+export async function getSavedWalletKeyStorageBackend(): Promise<WalletKeyStorageBackend> {
+  const keychainKey = await getKeychainWalletKey();
+  if (keychainKey) {
+    return 'keychain';
+  }
+
+  const fileKey = await getFileWalletKey();
+  if (fileKey) {
+    return 'file';
+  }
+
+  return 'none';
 }
 
 async function getKeychainWalletKey(): Promise<string | null> {

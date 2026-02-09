@@ -33,6 +33,12 @@ function runCli(args, options = {}) {
   };
 }
 
+test('help includes credits command', () => {
+  const result = runCli(['--help']);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /\bcredits\b/);
+});
+
 test('config --show redacts endpoint token path', async () => {
   const tempHome = await mkdtemp(path.join(os.tmpdir(), 'hypercore-cli-home-'));
   const configDir = path.join(tempHome, '.hypercore-cli');

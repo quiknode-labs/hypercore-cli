@@ -1,8 +1,9 @@
 import type { ConnectionMode, ResolvedCredentials } from '../types/common';
 import { deriveEndpointUrls } from '../utils/url';
-import { createX402AuthManager, type X402AuthManager } from './auth';
+import { createX402AuthManager } from './auth';
 import { createX402Fetch } from './fetch-wrapper';
 import { X402_CHAIN_IDS } from './constants';
+import { fetchX402Credits } from './credits';
 
 export interface ConnectionContext {
   mode: ConnectionMode;
@@ -12,6 +13,9 @@ export interface ConnectionContext {
   sensitiveTokens: string[];
   refreshWsUrl?: () => Promise<string>;
   ensureCredits?: () => Promise<void>;
+  getCredits?: () => Promise<number>;
+  initialCredits?: number;
+  getPurchasedCredits?: () => number;
   cleanup?: () => void;
 }
 
@@ -36,25 +40,6 @@ function createQuicknodeConnection(credentials: ResolvedCredentials): Connection
   };
 }
 
-async function getCredits(
-  authManager: X402AuthManager,
-  logger: { info(msg: string): void; warn(msg: string): void },
-): Promise<number> {
-  const jwt = await authManager.getValidJwt();
-  const url = `${authManager.getBaseUrl()}/credits`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${jwt}` },
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    logger.warn(`GET /credits failed (HTTP ${response.status}): ${body}`);
-    return -1;
-  }
-  const data = (await response.json()) as { accountId: string; credits: number };
-  return data.credits;
-}
-
 async function createX402Connection(
   credentials: ResolvedCredentials,
   logger: { info(msg: string): void; warn(msg: string): void },
@@ -70,6 +55,18 @@ async function createX402Connection(
     baseUrl,
     chainId,
   });
+  let totalPurchasedCredits = 0;
+
+  const getCredits = async (): Promise<number> => {
+    try {
+      const data = await fetchX402Credits(authManager);
+      return data.credits;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(message);
+      return -1;
+    }
+  };
 
   logger.info(`Authenticating with x402 (wallet: ${authManager.getWalletAddress()}, chain: ${chain})`);
   await authManager.getValidJwt();
@@ -89,11 +86,11 @@ async function createX402Connection(
   };
 
   // Proactively acquire credits before WS connect (WS upgrades can't trigger x402 payment)
-  const acquireCredits = async (): Promise<void> => {
-    const credits = await getCredits(authManager, logger);
+  const acquireCredits = async (): Promise<number> => {
+    const credits = await getCredits();
     logger.info(`x402 credits: ${credits}`);
     if (credits > 0) {
-      return;
+      return credits;
     }
     logger.info('No x402 credits, making paid HTTP request to acquire credits...');
     const paymentResponse = await fetchFn(httpUrl, {
@@ -110,14 +107,20 @@ async function createX402Connection(
     if (!paymentResponse.ok) {
       logger.warn(`Paid HTTP request failed (HTTP ${paymentResponse.status})`);
     }
-    const newCredits = await getCredits(authManager, logger);
+    const newCredits = await getCredits();
     logger.info(`x402 credits after payment: ${newCredits}`);
+    if (credits >= 0 && newCredits > credits) {
+      const acquired = newCredits - credits;
+      totalPurchasedCredits += acquired;
+      logger.info(`x402 credit top-up: +${acquired}`);
+    }
     if (newCredits <= 0) {
       throw new Error('Failed to acquire x402 credits after payment');
     }
+    return newCredits;
   };
 
-  await acquireCredits();
+  const initialCredits = await acquireCredits();
 
   return {
     mode: 'x402',
@@ -126,7 +129,12 @@ async function createX402Connection(
     fetchFn,
     sensitiveTokens: [walletKey],
     refreshWsUrl: buildWsUrl,
-    ensureCredits: acquireCredits,
+    ensureCredits: async () => {
+      await acquireCredits();
+    },
+    getCredits,
+    initialCredits,
+    getPurchasedCredits: () => totalPurchasedCredits,
     cleanup: () => {
       authManager.invalidate();
     },
