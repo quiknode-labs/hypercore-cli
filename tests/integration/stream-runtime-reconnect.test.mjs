@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 
 import { getNormalizer } from '../../dist/src/datasets/types.js';
 import { runStreamRuntime } from '../../dist/src/core/stream-runtime.js';
+import { WsClient } from '../../dist/src/core/ws-client.js';
 
 const SOCKET_TESTS_ENABLED = process.env.ENABLE_SOCKET_TESTS === '1';
 
@@ -146,7 +147,7 @@ test(
   try {
     const result = await runStreamRuntime({
       dataset: 'trades',
-      wsUrl: `ws://127.0.0.1:${address.port}`,
+      createTransport: (opts) => new WsClient({ url: `ws://127.0.0.1:${address.port}`, dataset: 'trades', filters: {}, ...opts }),
       httpUrl: 'http://127.0.0.1/backfill',
       filters: {},
       normalize: getNormalizer('trades'),
