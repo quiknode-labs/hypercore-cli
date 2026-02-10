@@ -75,7 +75,7 @@ npm install -g @quicknode/hypercore-cli
 hypercore-cli config
 ```
 
-The interactive prompt will ask for your WSS endpoint. The CLI auto-extracts the token from the URL path — no need to split it manually.
+The interactive prompt will ask for your WSS endpoint. The CLI auto-extracts the token from the URL path and derives the gRPC endpoint automatically — no need to split or configure them separately.
 
 > Credentials are stored securely: the endpoint goes to `~/.hypercore-cli/config.json` and the token is saved to your OS keychain (or a local file with `0600` permissions if the keychain is unavailable).
 
@@ -124,12 +124,12 @@ See what each dataset looks like before you commit to a full stream or backfill.
 ```bash
 hypercore-cli sample --list              # List all datasets with docs links
 hypercore-cli sample --dataset orders    # Inspect orders payload structure
-hypercore-cli sample --dataset twap      # Inspect TWAP payload structure
+hypercore-cli sample --dataset blocks    # Inspect raw block payload structure
 ```
 
-### `stream` — Real-time WebSocket streaming
+### `stream` — Real-time streaming (WSS + gRPC)
 
-Subscribe to live data with optional server-side filtering. Use `--help` to see all flags and defaults.
+Subscribe to live data over WebSocket or gRPC with optional server-side filtering. Use `--help` to see all flags and defaults.
 
 #### Interactive mode
 
@@ -147,6 +147,11 @@ hypercore-cli stream
   book updates     - Level 2 order book updates
   twap             - TWAP order status updates
   writer actions   - System writer actions and bridge operations
+  blocks           - Raw block data (gRPC only)
+
+? Transport:
+❯ WSS  - WebSocket (default)
+  gRPC - gRPC transport
 
 ? Filter by coins (e.g. BTC or BTC,ETH, or 'all'): BTC,ETH
 ? Filter by users (e.g. 0x123 or 0x123,0x456, or 'all'): all
@@ -161,13 +166,19 @@ hypercore-cli stream
 🚀 Streaming orders for BTC, ETH...
 ```
 
-The wizard detects when you are in a terminal (TTY) and walks through dataset selection, filters, output format, and event limit step by step. Any flag you provide on the command line skips the corresponding wizard step.
+The wizard detects when you are in a terminal (TTY) and walks through dataset selection, transport, filters, output format, and event limit step by step. Any flag you provide on the command line skips the corresponding wizard step. If you select a gRPC-only dataset (e.g. `blocks`), the transport step is automatically set to gRPC.
 
 #### Flag-based usage
 
 ```bash
-# Stream all orders
+# Stream all orders (WebSocket, default)
 hypercore-cli stream --dataset orders
+
+# Use gRPC transport for lower latency
+hypercore-cli stream --dataset trades --transport grpc --tokens BTC,ETH
+
+# Stream raw blocks (gRPC-only dataset, transport auto-selected)
+hypercore-cli stream --dataset blocks --output json --limit 100
 
 # Filter by multiple coins and user addresses
 hypercore-cli stream --dataset trades --tokens BTC,ETH --users 0x123,0x456
@@ -193,6 +204,7 @@ hypercore-cli stream --dataset trades --output sqlite --path ./trades.db --limit
 | Flag | Description | Default |
 |---|---|---|
 | `--dataset` | Dataset to stream (see [Datasets](#datasets)) | _(prompted)_ |
+| `--transport` | Transport protocol: `wss`, `grpc` | `wss` |
 | `--tokens` | Filter by coins, e.g. `BTC` or `BTC,ETH` | _(none)_ |
 | `--users` | Filter by user addresses, e.g. `0x123` or `0x123,0x456` | _(none)_ |
 | `--statuses` | Filter by order status (orders only), e.g. `open` or `open,filled` | _(none)_ |
@@ -205,7 +217,7 @@ If the connection drops, the CLI automatically reconnects with exponential backo
 
 ### `backfill` — Historical block range ingestion
 
-Fetch past data via JSON-RPC. Useful for research, backtesting, or seeding a local database. Use `--help` to see all flags and defaults.
+Fetch past data via JSON-RPC. Useful for research, backtesting, or seeding a local database. Use `--help` to see all flags and defaults. Note: gRPC-only datasets (like `blocks`) are not available for backfill.
 
 #### Interactive mode
 
@@ -279,11 +291,12 @@ hypercore-cli backfill --dataset writer_actions --from 887643588 --to 887643688 
 
 ### `stats` — Live stream statistics
 
-Monitor event rates and counters in real time. Use `--help` to see all flags and defaults.
+Monitor event rates and counters in real time. Supports both WSS and gRPC transports. Use `--help` to see all flags and defaults.
 
 ```bash
 hypercore-cli stats --dataset orders --interval 5
-hypercore-cli stats --dataset trades --tokens BTC,ETH --limit 200
+hypercore-cli stats --dataset trades --transport grpc --tokens BTC,ETH --limit 200
+hypercore-cli stats --dataset blocks --interval 2
 hypercore-cli stats --dataset writer_actions --progress json --interval 2
 ```
 
@@ -291,6 +304,7 @@ hypercore-cli stats --dataset writer_actions --progress json --interval 2
 
 | Flag | Description | Default |
 |---|---|---|
+| `--transport` | Transport protocol: `wss`, `grpc` | `wss` |
 | `--interval` | Snapshot print interval in seconds | `5` |
 | `--limit` | Stop after N events (0 = unlimited) | `0` |
 | `--progress` | Progress output mode: `text`, `json` | `text` |
@@ -358,14 +372,15 @@ hypercore-cli stream --dataset trades --output json --stdout | jq .coin
 
 ## Datasets
 
-| Dataset | Description | Volume | Docs |
-|---|---|---|---|
-| `orders` | Order lifecycle — open, filled, canceled, rejected | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/orders) |
-| `trades` | Executed fills with price, size, and fee details | High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/trades) |
-| `events` | System events — liquidations, funding, settlements | Medium | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/events) |
-| `book_updates` | Level 2 order book changes (bids/asks) | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/book-updates) |
-| `twap` | TWAP order execution tracking | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/twap) |
-| `writer_actions` | HyperCore-to-HyperEVM bridge transfers | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/writer-actions) |
+| Dataset | Description | Stream | Backfill | Volume | Docs |
+|---|---|---|---|---|---|
+| `orders` | Order lifecycle — open, filled, canceled, rejected | WSS, gRPC | Yes | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/orders) |
+| `trades` | Executed fills with price, size, and fee details | WSS, gRPC | Yes | High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/trades) |
+| `events` | System events — liquidations, funding, settlements | WSS, gRPC | Yes | Medium | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/events) |
+| `book_updates` | Level 2 order book changes (bids/asks) | WSS, gRPC | Yes | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/book-updates) |
+| `twap` | TWAP order execution tracking | WSS, gRPC | Yes | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/twap) |
+| `writer_actions` | HyperCore-to-HyperEVM bridge transfers | WSS, gRPC | Yes | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/writer-actions) |
+| `blocks` | Raw block data — all L1 transactions and responses | gRPC only | No | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/blocks) |
 
 Browse all datasets interactively:
 
@@ -416,6 +431,14 @@ hypercore-cli backfill --dataset orders --from 887643588 --to 887643688 \
 hypercore-cli stream --dataset book_updates --tokens ETH --output json --limit 100
 ```
 
+### Stream raw L1 blocks
+
+Access every transaction on Hyperliquid — orders, cancels, transfers, vault ops, and more — via the gRPC-only `blocks` dataset:
+
+```bash
+hypercore-cli stream --dataset blocks --output json --limit 50
+```
+
 ### Track HyperCore-to-HyperEVM bridge activity
 
 ```bash
@@ -439,7 +462,7 @@ Not sure which dataset fits your use case? Browse them all:
 
 ```bash
 hypercore-cli sample --list
-hypercore-cli sample --dataset twap
+hypercore-cli sample --dataset blocks
 hypercore-cli sample --dataset writer_actions
 ```
 
@@ -553,8 +576,9 @@ pnpm pack:dry-run   # Verify tarball contents before publish
 
 ## Architecture
 
-The CLI is built on a **WebSocket-first** design for real-time streaming with **JSON-RPC** for historical backfill. Key architectural choices:
+The CLI supports **dual transport** — WebSocket (default) and gRPC — for real-time streaming, with **JSON-RPC** for historical backfill. Key architectural choices:
 
+- **Pluggable transport layer** — `stream` and `stats` accept `--transport wss` or `--transport grpc`; gRPC-only datasets (like `blocks`) auto-select gRPC
 - **Auto-reconnect with gap recovery** — on disconnect, the CLI backfills missed blocks via `hl_getBatchBlocks` before resuming the live stream
 - **Shared stream runtime** — `stream` and `stats` share the same reconnect/backfill pipeline, so reliability improvements apply everywhere
 - **Central dataset registry** — adding a new dataset is mechanical: register it, write a normalizer, and all commands + outputs work automatically
@@ -564,8 +588,8 @@ The CLI is built on a **WebSocket-first** design for real-time streaming with **
 
 ## Roadmap
 
-- [ ] gRPC transport integration (higher throughput, compression)
-- [ ] `blocks` dataset support (raw L1 transactions, gRPC-only)
+- [x] gRPC transport integration (higher throughput, binary Protobuf encoding)
+- [x] `blocks` dataset support (raw L1 transactions, gRPC-only)
 
 ---
 

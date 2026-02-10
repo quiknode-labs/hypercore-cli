@@ -184,11 +184,71 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
     wsAliases: [],
     backfillStream: '',
     grpcOnly: true,
-    keyFields: ['block_number'],
+    keyFields: [
+      'abci_block.round',
+      'abci_block.proposer',
+      'abci_block.signed_action_bundles',
+      'resps',
+    ],
     sampleEvent: {
-      block_number: 123456,
-      timestamp: 1767351660123,
-      data: '{}',
+      abci_block: {
+        round: 1096693511,
+        parent_round: 1096693510,
+        time: '2025-12-04T08:00:47.509497915',
+        proposer: '0x9dd85fb6cf95a9d755af0853b36fb05e972c71e1',
+        hardfork: {
+          version: 69,
+          round: 1091072071,
+        },
+        signed_action_bundles: [
+          [
+            '0xaaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666777788889999aaaa',
+            {
+              signed_actions: [
+                {
+                  signature: {
+                    r: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+                    s: '0xfedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321',
+                    v: 28,
+                  },
+                  action: {
+                    type: 'order',
+                    a: 0,
+                    b: true,
+                    p: '92385.0',
+                    s: '0.00361',
+                    r: false,
+                    t: { limit: { tif: 'Gtc' } },
+                    c: '0x89119db7aae18b90abe620888af9aadc',
+                  },
+                  nonce: 1764816505537,
+                  vaultAddress: null,
+                },
+              ],
+              broadcaster: '0x1111222233334444555566667777888899990000',
+              broadcaster_nonce: 1764816362065,
+            },
+          ],
+        ],
+      },
+      resps: {
+        Full: [
+          [
+            '0xaaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666777788889999aaaa',
+            [
+              {
+                user: '0x1111222233334444555566667777888899990000',
+                res: {
+                  status: 'ok',
+                  response: {
+                    type: 'default',
+                  },
+                },
+              },
+            ],
+          ],
+        ],
+      },
     },
   },
 };
