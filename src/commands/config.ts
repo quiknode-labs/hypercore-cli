@@ -11,9 +11,12 @@ import {
 } from '../config/keychain';
 import { getConfigPath, readSavedConfig, writeSavedConfig, clearSavedConfig } from '../config/storage';
 import { maskToken } from '../config/credentials';
+import { stdoutColors as sc } from '../utils/ansi';
+import { selectPrompt } from '../utils/interactive';
 import { promptAdapter } from '../utils/prompt';
 import {
   extractTokenFromEndpoint,
+  QUICKNODE_GRPC_EXAMPLE,
   QUICKNODE_WSS_EXAMPLE,
   redactEndpointUrl,
   sanitizeEndpointForStorage,
@@ -46,15 +49,18 @@ export function registerConfigCommand(program: Command): void {
         const savedBackend = await getSavedTokenStorageBackend();
         const endpointDisplay = saved.endpoint ? redactEndpointUrl(saved.endpoint) : '(not set)';
 
-        process.stdout.write(`Config path: ${getConfigPath()}\n`);
-        process.stdout.write(`Endpoint: ${endpointDisplay}\n`);
-        process.stdout.write(`Token: ${maskToken(token)}\n`);
-        process.stdout.write(`Keychain available: ${String(keychainAvailable)}\n`);
-        process.stdout.write(`Token storage preference: ${preferredBackend}\n`);
-        process.stdout.write(`Token storage in use: ${savedBackend}\n`);
+        const lines = [
+          sc.bold('Configuration'),
+          `  endpoint    ${endpointDisplay}`,
+          `  token       ${maskToken(token)}`,
+          `  storage     ${savedBackend}${keychainAvailable ? '' : ' (keychain unavailable)'}`,
+          `  preference  ${preferredBackend}`,
+          `  config      ${getConfigPath()}`,
+        ];
         if (savedBackend === 'file') {
-          process.stdout.write(`Token file: ${getTokenFilePath()} (permissions 600)\n`);
+          lines.push(`  token file  ${getTokenFilePath()} (permissions 600)`);
         }
+        process.stdout.write(`${lines.join('\n')}\n`);
         return;
       }
 
@@ -75,28 +81,70 @@ export function registerConfigCommand(program: Command): void {
       }
 
       process.stdout.write('Quicknode onboarding:\n');
-      process.stdout.write('1) Create or sign in to your Quicknode account.\n');
+      const dashboardUrl = 'https://dashboard.quicknode.com?utm_source=qn-hype-cli';
+      const link = `\x1b]8;;${dashboardUrl}\x1b\\Quicknode account\x1b]8;;\x1b\\`;
+      process.stdout.write(`1) Create or sign in to your ${link}.\n`);
       process.stdout.write('2) Create a Hyperliquid endpoint.\n');
-      process.stdout.write('3) Select the WSS endpoint and copy the Hypercore URL.\n');
-      process.stdout.write(`Example: ${QUICKNODE_WSS_EXAMPLE}\n`);
-      process.stdout.write('Tip: You can also paste just the endpoint host and enter token separately.\n');
 
-      const endpoint = await promptAdapter.ask('Quicknode endpoint (host or full WSS URL): ', {
-        secret: true,
+      const transport = await selectPrompt({
+        message: 'Connect via',
+        options: [
+          { value: 'wss', label: 'WSS', description: 'WebSocket (default)' },
+          { value: 'grpc', label: 'gRPC', description: 'gRPC transport' },
+        ],
       });
-      if (!endpoint) {
-        throw new Error('Endpoint is required');
+      const isGrpc = transport === 'grpc';
+
+      let endpoint: string;
+      let token: string;
+
+      if (isGrpc) {
+        process.stdout.write('3) Copy the gRPC endpoint and auth token from your dashboard.\n');
+        process.stdout.write(`Example: ${QUICKNODE_GRPC_EXAMPLE}\n`);
+
+        const grpcEndpoint = await promptAdapter.ask(
+          `gRPC endpoint (e.g. ${QUICKNODE_GRPC_EXAMPLE}): `,
+          { secret: true },
+        );
+        if (!grpcEndpoint) {
+          throw new Error('Endpoint is required');
+        }
+
+        const grpcToken = await promptAdapter.ask('Auth token: ', { secret: true });
+        if (!grpcToken) {
+          throw new Error('Token is required');
+        }
+
+        // Strip :10000 port if present — deriveEndpointUrls appends it for gRPC
+        endpoint = grpcEndpoint.trim().replace(/:10000$/, '');
+        token = grpcToken.trim();
+      } else {
+        process.stdout.write('3) Select the WSS endpoint and copy the Hypercore URL.\n');
+        process.stdout.write(`Example: ${QUICKNODE_WSS_EXAMPLE}\n`);
+        process.stdout.write(
+          'Tip: You can also paste just the endpoint host and enter token separately.\n',
+        );
+
+        const wssEndpoint = await promptAdapter.ask('Quicknode endpoint (host or full WSS URL): ', {
+          secret: true,
+        });
+        if (!wssEndpoint) {
+          throw new Error('Endpoint is required');
+        }
+
+        const endpointToken = extractTokenFromEndpoint(wssEndpoint);
+        const wssToken =
+          endpointToken ??
+          (await promptAdapter.ask('Quicknode API token: ', { secret: true }));
+        if (!wssToken) {
+          throw new Error('Token is required');
+        }
+
+        endpoint = sanitizeEndpointForStorage(wssEndpoint);
+        token = wssToken;
       }
 
-      const endpointToken = extractTokenFromEndpoint(endpoint);
-      const token =
-        endpointToken ??
-        (await promptAdapter.ask('Quicknode API token: ', { secret: true }));
-      if (!token) {
-        throw new Error('Token is required');
-      }
-
-      await writeSavedConfig({ endpoint: sanitizeEndpointForStorage(endpoint) });
+      await writeSavedConfig({ endpoint });
       await saveToken(token);
 
       const tokenStorageBackend = await getSavedTokenStorageBackend();

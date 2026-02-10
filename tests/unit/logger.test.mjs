@@ -51,7 +51,8 @@ test('createLogger quiet mode suppresses info but not warnings', () => {
   }
 
   assert.equal(writes.length, 1);
-  assert.ok(writes[0].includes('Warning: visible'));
+  assert.ok(writes[0].includes('[warn]'));
+  assert.ok(writes[0].includes('visible'));
 });
 
 test('createLogger applies message redaction before output', () => {

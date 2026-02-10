@@ -1,12 +1,16 @@
 export interface EndpointUrls {
   wsUrl: string;
   httpUrl: string;
+  grpcUrl: string;
 }
 
 const REDACTED_VALUE = '****';
 const SENSITIVE_QUERY_KEY_PATTERN = /(token|api[_-]?key|authorization)/i;
 export const QUICKNODE_WSS_EXAMPLE =
   'wss://YOUR_ENDPOINT_NAME.hype-mainnet.quiknode.pro/YOUR_TOKEN/hypercore/ws';
+export const QUICKNODE_GRPC_EXAMPLE = 'YOUR_ENDPOINT_NAME.hype-mainnet.quiknode.pro:10000';
+
+const GRPC_PORT = 10000;
 
 export function deriveEndpointUrls(endpointInput: string, tokenInput?: string): EndpointUrls {
   const endpoint = endpointInput.trim();
@@ -30,6 +34,7 @@ export function deriveEndpointUrls(endpointInput: string, tokenInput?: string): 
         return {
           wsUrl,
           httpUrl: `${httpProtocol}//${parsed.host}/${endpointToken}/hypercore`,
+          grpcUrl: toGrpcUrl(parsed.hostname),
         };
       }
 
@@ -41,6 +46,7 @@ export function deriveEndpointUrls(endpointInput: string, tokenInput?: string): 
       return {
         wsUrl: `${protocol}//${parsed.host}/${token}/hypercore/ws`,
         httpUrl: `${protocol === 'wss:' ? 'https:' : 'http:'}//${parsed.host}/${token}/hypercore`,
+        grpcUrl: toGrpcUrl(parsed.hostname),
       };
     }
 
@@ -57,6 +63,7 @@ export function deriveEndpointUrls(endpointInput: string, tokenInput?: string): 
         return {
           wsUrl: `${protocol === 'https:' ? 'wss:' : 'ws:'}//${parsed.host}/${endpointToken}/hypercore/ws`,
           httpUrl: `${protocol}//${parsed.host}/${endpointToken}/hypercore`,
+          grpcUrl: toGrpcUrl(parsed.hostname),
         };
       }
 
@@ -69,21 +76,26 @@ export function deriveEndpointUrls(endpointInput: string, tokenInput?: string): 
       return {
         wsUrl: `${protocol === 'https:' ? 'wss:' : 'ws:'}//${parsed.host}/${token}/hypercore/ws`,
         httpUrl: `${protocol}//${parsed.host}/${token}/hypercore`,
+        grpcUrl: toGrpcUrl(parsed.hostname),
       };
     }
   }
 
   const normalizedEndpoint = endpoint.replace(/^\/+|\/+$/g, '');
   if (hasHypercoreWsPath(normalizedEndpoint)) {
+    const host = normalizedEndpoint.split('/')[0] ?? normalizedEndpoint;
     return {
       wsUrl: `wss://${normalizedEndpoint}`,
       httpUrl: `https://${normalizedEndpoint.replace(/\/ws$/, '')}`,
+      grpcUrl: toGrpcUrl(stripPort(host)),
     };
   }
   if (hasHypercoreHttpPath(normalizedEndpoint)) {
+    const host = normalizedEndpoint.split('/')[0] ?? normalizedEndpoint;
     return {
       wsUrl: `wss://${normalizedEndpoint}/ws`,
       httpUrl: `https://${normalizedEndpoint}`,
+      grpcUrl: toGrpcUrl(stripPort(host)),
     };
   }
 
@@ -97,7 +109,24 @@ export function deriveEndpointUrls(endpointInput: string, tokenInput?: string): 
   return {
     wsUrl: `wss://${host}/${token}/hypercore/ws`,
     httpUrl: `https://${host}/${token}/hypercore`,
+    grpcUrl: toGrpcUrl(stripPort(host)),
   };
+}
+
+function toGrpcUrl(hostname: string): string {
+  return `${hostname}:${GRPC_PORT}`;
+}
+
+function stripPort(hostWithOptionalPort: string): string {
+  const colonIndex = hostWithOptionalPort.lastIndexOf(':');
+  if (colonIndex === -1) {
+    return hostWithOptionalPort;
+  }
+  const afterColon = hostWithOptionalPort.slice(colonIndex + 1);
+  if (/^\d+$/.test(afterColon)) {
+    return hostWithOptionalPort.slice(0, colonIndex);
+  }
+  return hostWithOptionalPort;
 }
 
 export function extractTokenFromEndpoint(endpointInput: string): string | null {
@@ -134,6 +163,20 @@ export function redactEndpointUrl(endpointInput: string): string {
     }
   }
 
+  // Handle bare hostname:port (e.g. gRPC URLs like host.quiknode.pro:10000)
+  const colonIndex = endpoint.lastIndexOf(':');
+  if (colonIndex > 0) {
+    const afterColon = endpoint.slice(colonIndex + 1);
+    if (/^\d+$/.test(afterColon)) {
+      return `${redactHostname(endpoint.slice(0, colonIndex))}:${afterColon}`;
+    }
+  }
+
+  // Handle bare hostname (e.g. saved endpoint like name.hype-mainnet.quiknode.pro)
+  if (endpoint.includes('.') && !endpoint.includes('/')) {
+    return redactHostname(endpoint);
+  }
+
   return redactHypercoreTokenPath(endpointInput);
 }
 
@@ -141,6 +184,8 @@ export function redactSensitiveText(input: string, options?: { token?: string | 
   let redacted = input;
 
   redacted = redacted.replace(/(wss?|https?):\/\/[^\s'"`]+/gi, (value) => redactEndpointUrl(value));
+  // Redact bare hostname:port (e.g. gRPC endpoints like host.quiknode.pro:10000)
+  redacted = redacted.replace(/[a-z0-9-]+\.[\w.-]+:\d+/gi, (value) => redactEndpointUrl(value));
   redacted = redactHypercoreTokenPath(redacted);
   redacted = redacted.replace(
     /([?&](?:token|api[_-]?key|authorization)=)([^&#\s]+)/gi,

@@ -97,6 +97,13 @@ const HEADERS: Record<DatasetName, string[]> = {
     'wei',
     'event_time',
   ],
+  blocks: [
+    'event_key',
+    'block_number',
+    'block_time',
+    'local_time',
+    'data_json',
+  ],
 };
 
 export class CsvWriter implements OutputWriter {
@@ -236,6 +243,17 @@ export class CsvWriter implements OutputWriter {
             event.token,
             event.wei,
             event.eventTime,
+          ])}\n`,
+        );
+        return;
+      case 'blocks':
+        this.out.write(
+          `${toCsvLine([
+            event.eventKey,
+            event.blockNumber,
+            event.blockTime,
+            event.localTime,
+            event.dataJson,
           ])}\n`,
         );
         return;

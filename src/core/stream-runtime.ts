@@ -2,13 +2,16 @@ import { JsonRpcClient } from '../api/jsonrpc';
 import type { FilterMap } from '../filters/filter-builder';
 import { getReconnectDelaySeconds } from './reconnection-manager';
 import { StreamProcessor } from './stream-processor';
-import { WsClient } from './ws-client';
 import type { DatasetName } from '../types/common';
 import type { NormalizedEvent, RawStreamBlock } from '../types/stream';
+import type { StreamTransport } from '../types/transport';
 
 export interface StreamRuntimeOptions {
   dataset: DatasetName;
-  wsUrl: string;
+  createTransport: (opts: {
+    onBlock: (block: RawStreamBlock) => Promise<void>;
+    onInfo: (message: string) => void;
+  }) => StreamTransport;
   httpUrl: string;
   filters: FilterMap;
   normalize: (block: RawStreamBlock) => NormalizedEvent[];
@@ -74,10 +77,7 @@ export async function runStreamRuntime(options: StreamRuntimeOptions): Promise<S
     while (!abortController.signal.aborted) {
       let blockProcessingChain: Promise<void> = Promise.resolve();
 
-      const wsClient = new WsClient({
-        url: options.wsUrl,
-        dataset: options.dataset,
-        filters: options.filters,
+      const transport = options.createTransport({
         onBlock: async (block) => {
           blockProcessingChain = blockProcessingChain.then(async () => {
             if (stopRequested || abortController.signal.aborted) {
@@ -99,7 +99,7 @@ export async function runStreamRuntime(options: StreamRuntimeOptions): Promise<S
       }
 
       try {
-        const result = await wsClient.connectAndRun(abortController.signal);
+        const result = await transport.connectAndRun(abortController.signal);
         await blockProcessingChain;
         if (result === 'aborted') {
           break;

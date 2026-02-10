@@ -109,7 +109,7 @@ export async function runBackfillWizard(
 async function promptDataset(
   select: <T>(config: SelectPromptConfig<T>) => Promise<T>,
 ): Promise<DatasetName> {
-  const definitions = listDatasetDefinitions();
+  const definitions = listDatasetDefinitions().filter((def) => !def.grpcOnly);
   const options: SelectOption<DatasetName>[] = definitions.map((def) => ({
     value: def.name,
     label: def.displayName.toLowerCase().padEnd(16),

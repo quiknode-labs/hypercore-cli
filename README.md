@@ -24,12 +24,13 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 
 | Feature | What it does |
 |---|---|
-| **Real-time streaming** | Subscribe to live WebSocket feeds for orders, trades, events, book updates, TWAP, and writer actions |
+| **Real-time streaming** | Subscribe to live feeds for orders, trades, events, book updates, TWAP, writer actions, and blocks |
+| **Dual transport: WSS + gRPC** | Choose WebSocket (default) or gRPC (`--transport grpc`) for lower latency and binary Protobuf encoding |
 | **Auto-reconnect + gap recovery** | Exponential backoff reconnection with automatic JSON-RPC backfill — zero data loss on network drops |
 | **Historical backfill** | Fetch any block range via JSON-RPC and export to JSON, CSV, or SQLite |
 | **Auto file output** | CSV, JSON, and SQLite outputs are automatically written to timestamped files — no manual naming needed |
 | **Built-in SQL query engine** | Interactive REPL and one-shot SQL against your local SQLite data |
-| **6 datasets** | `orders` · `trades` · `events` · `book_updates` · `twap` · `writer_actions` |
+| **7 datasets** | `orders` · `trades` · `events` · `book_updates` · `twap` · `writer_actions` · `blocks` (gRPC-only) |
 | **4 output formats** | Pretty console, JSON lines, CSV, and SQLite persistence |
 | **Server-side filtering** | Filter by coin, user address, or order status before data leaves the server |
 | **Automation-ready** | `--progress json` emits machine-readable telemetry to stderr for scripts and pipelines |

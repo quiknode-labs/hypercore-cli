@@ -1,12 +1,16 @@
 import { Command } from 'commander';
 
+import { GrpcStreamClient } from '../api/grpc-client';
 import { resolveCredentials } from '../config/credentials';
-import { getDatasetNames, isDatasetName } from '../datasets/registry';
+import { getDatasetDefinition, getDatasetNames, isDatasetName } from '../datasets/registry';
 import { getNormalizer } from '../datasets/types';
 import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { runStreamRuntime } from '../core/stream-runtime';
+import { WsClient } from '../core/ws-client';
 import { createWriter } from '../outputs';
 import type { DatasetName, OutputFormat } from '../types/common';
+import type { TransportType } from '../types/transport';
+import { stderrColors as c, formatNumber } from '../utils/ansi';
 import { isInteractive } from '../utils/interactive';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
@@ -32,6 +36,7 @@ interface StreamOptions {
   token?: string;
   filter?: string[];
   stdout?: boolean;
+  transport?: string;
 }
 
 export function registerStreamCommand(program: Command): void {
@@ -57,6 +62,7 @@ export function registerStreamCommand(program: Command): void {
     .option('--token <token>', 'Quicknode token override')
     .option('--stdout', 'Write csv/json output to stdout instead of file', false)
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
+    .option('--transport <type>', 'Transport protocol: wss (default), grpc', 'wss')
     .action(async (options: StreamOptions) => {
       await streamAction(options);
     });
@@ -71,6 +77,7 @@ async function streamAction(options: StreamOptions): Promise<void> {
   if (isInteractive() && !options.dataset) {
     const result = await runStreamWizard({
       datasetFlag: options.dataset,
+      transportFlag: options.transport === 'wss' ? undefined : options.transport,
       tokensFlag: options.tokens,
       usersFlag: options.users,
       statusesFlag: options.statuses,
@@ -78,6 +85,7 @@ async function streamAction(options: StreamOptions): Promise<void> {
       limitFlag: options.limit === '0' ? undefined : options.limit,
     });
     options.dataset = result.dataset;
+    options.transport = result.transport;
     options.tokens = result.tokens ?? options.tokens;
     options.users = result.users ?? options.users;
     options.statuses = result.statuses ?? options.statuses;
@@ -88,6 +96,8 @@ async function streamAction(options: StreamOptions): Promise<void> {
   }
 
   const dataset = await resolveDataset(options.dataset);
+  const definition = getDatasetDefinition(dataset);
+  const transport = definition.grpcOnly ? 'grpc' as TransportType : resolveTransport(options.transport);
   const output = resolveOutput(options.output);
   const limit = resolveLimit(options.limit);
   const progressMode = resolveProgressMode(options.progress);
@@ -134,7 +144,20 @@ async function streamAction(options: StreamOptions): Promise<void> {
   } else if (!options.stdout && (output === 'csv' || output === 'json' || output === 'sqlite')) {
     filePath = generateOutputPath('stream', dataset, output, options.tokens);
   }
-  logger.info(`Connecting to ${urls.wsUrl} (dataset=${dataset}, output=${output}${filePath ? ` -> ${filePath}` : ''}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
+  const connectUrl = transport === 'grpc' ? urls.grpcUrl : urls.wsUrl;
+  const filterSummary = summarizeFilters(filters);
+  const bannerLines = [
+    `${c.bold('Stream')}`,
+    `  dataset    ${c.cyan(dataset)}`,
+    `  transport  ${c.cyan(transport)}`,
+    `  output     ${c.cyan(output)}${filePath ? ` -> ${filePath}` : ''}`,
+    `  limit      ${c.cyan(limitLabel)}`,
+    `  filters    ${c.cyan(filterSummary)}`,
+    `  connecting ${connectUrl}`,
+  ];
+  for (const line of bannerLines) {
+    logger.info(line);
+  }
 
   const writer = createWriter({
     format: output,
@@ -143,10 +166,16 @@ async function streamAction(options: StreamOptions): Promise<void> {
   });
   await writer.init({ dataset });
 
+  const createTransport = transport === 'grpc'
+    ? (opts: { onBlock: (block: import('../types/stream').RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
+        new GrpcStreamClient({ grpcUrl: urls.grpcUrl, token: credentials.token, dataset, filters, ...opts })
+    : (opts: { onBlock: (block: import('../types/stream').RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
+        new WsClient({ url: urls.wsUrl, dataset, filters, ...opts });
+
   try {
     await runStreamRuntime({
       dataset,
-      wsUrl: urls.wsUrl,
+      createTransport,
       httpUrl: urls.httpUrl,
       filters,
       normalize: getNormalizer(dataset),
@@ -164,7 +193,7 @@ async function streamAction(options: StreamOptions): Promise<void> {
     const runtimeSeconds = Math.max((Date.now() - startedAt) / 1000, 0.001);
     const avgEps = emittedCount / runtimeSeconds;
     logger.info(
-      `Stream done: emitted=${emittedCount}, runtime_s=${runtimeSeconds.toFixed(3)}, eps_avg=${avgEps.toFixed(2)}`,
+      `Stream complete: ${formatNumber(emittedCount)} events in ${runtimeSeconds.toFixed(3)}s (${avgEps.toFixed(2)} eps)`,
     );
     if (filePath) {
       logger.info(`Output written to: ${filePath}`);
@@ -204,4 +233,14 @@ function resolveLimit(input?: string): number {
     throw new Error(`Invalid --limit '${input}'. Must be >= 0.`);
   }
   return parsed;
+}
+
+const VALID_TRANSPORTS: TransportType[] = ['wss', 'grpc'];
+
+function resolveTransport(input?: string): TransportType {
+  const value = (input ?? 'wss') as TransportType;
+  if (!VALID_TRANSPORTS.includes(value)) {
+    throw new Error(`Invalid --transport '${input}'. Expected one of: ${VALID_TRANSPORTS.join(', ')}`);
+  }
+  return value;
 }

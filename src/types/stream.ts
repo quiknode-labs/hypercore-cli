@@ -116,13 +116,19 @@ export interface NormalizedWriterActionEvent extends StreamEnvelopeBase {
   eventTime: string | null;
 }
 
+export interface NormalizedBlockEvent extends StreamEnvelopeBase {
+  stream: 'blocks';
+  dataJson: string;
+}
+
 export type NormalizedEvent =
   | NormalizedOrderEvent
   | NormalizedTradeEvent
   | NormalizedSystemEvent
   | NormalizedBookUpdateEvent
   | NormalizedTwapEvent
-  | NormalizedWriterActionEvent;
+  | NormalizedWriterActionEvent
+  | NormalizedBlockEvent;
 
 export interface StreamProcessorBlockFetcher {
   fetchBatchBlocks(stream: DatasetName, from: number, to: number): Promise<RawStreamBlock[]>;

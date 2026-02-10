@@ -1,5 +1,6 @@
 import type { DatasetName } from '../types/common';
 import type { NormalizedEvent, RawStreamBlock } from '../types/stream';
+import { normalizeBlocksBlock } from './blocks';
 import { normalizeBookUpdatesBlock } from './book-updates';
 import { normalizeEventsBlock } from './events';
 import { normalizeOrderBlock } from './orders';
@@ -16,6 +17,7 @@ const NORMALIZERS: Record<DatasetName, DatasetNormalizer> = {
   book_updates: normalizeBookUpdatesBlock,
   twap: normalizeTwapBlock,
   writer_actions: normalizeWriterActionsBlock,
+  blocks: normalizeBlocksBlock,
 };
 
 export function getNormalizer(dataset: DatasetName): DatasetNormalizer {

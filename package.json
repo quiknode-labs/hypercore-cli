@@ -47,7 +47,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp -r src/proto dist/src/proto",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm -s build && node --test tests/**/*.test.mjs",
@@ -57,6 +57,8 @@
     "pack:dry-run": "npm pack --dry-run --cache \"${TMPDIR:-/tmp}/hypercore-cli-npm-cache\""
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0",
     "better-sqlite3": "^11.10.0",
     "commander": "^14.0.2",
     "keytar": "^7.9.0",

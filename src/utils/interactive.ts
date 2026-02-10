@@ -1,20 +1,7 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
-/* ------------------------------------------------------------------ */
-/*  ANSI helpers (no chalk dependency)                                 */
-/* ------------------------------------------------------------------ */
-
-const ansi = {
-  cyan: (s: string): string => `\x1b[36m${s}\x1b[0m`,
-  dim: (s: string): string => `\x1b[2m${s}\x1b[0m`,
-  green: (s: string): string => `\x1b[32m${s}\x1b[0m`,
-  clearLine: '\x1b[2K',
-  cursorUp: (n: number): string => (n > 0 ? `\x1b[${n}A` : ''),
-  cursorToCol0: '\r',
-  hideCursor: '\x1b[?25l',
-  showCursor: '\x1b[?25h',
-};
+import { stdoutColors as ansi } from './ansi';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -56,7 +43,7 @@ export function renderSelectOptions<T>(
     .map((opt, i) => {
       const cursor = i === selectedIndex ? ansi.cyan('❯') : ' ';
       const label = i === selectedIndex ? ansi.cyan(opt.label) : opt.label;
-      const desc = opt.description ? ansi.dim(` - ${opt.description}`) : '';
+      const desc = opt.description ? ` - ${opt.description}` : '';
       return `${cursor} ${label}${desc}`;
     })
     .join('\n');
@@ -170,7 +157,7 @@ export async function selectPrompt<T>(config: SelectPromptConfig<T>): Promise<T>
 export async function textPrompt(config: TextPromptConfig): Promise<string> {
   const { message, defaultValue } = config;
 
-  const hint = defaultValue ? ansi.dim(` (${defaultValue})`) : '';
+  const hint = defaultValue ? ` (${defaultValue})` : '';
   const question = `${ansi.green('?')} ${message}${hint}: `;
 
   const rl = createInterface({ input: stdin, output: stdout, terminal: true });

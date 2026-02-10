@@ -66,6 +66,7 @@ test('wizard produces correct result with mocked prompts', async () => {
   const mockPromptFns = {
     selectPrompt: async (config) => {
       if (config.message.includes('dataset')) return 'orders';
+      if (config.message.includes('Transport')) return 'wss';
       if (config.message.includes('Output')) return 'json';
       throw new Error(`Unexpected select prompt: ${config.message}`);
     },
@@ -94,6 +95,7 @@ test('wizard skips steps when flags are pre-supplied', async () => {
   const mockPromptFns = {
     selectPrompt: async (config) => {
       promptsCalled.push(config.message);
+      if (config.message.includes('Transport')) return 'wss';
       if (config.message.includes('Output')) return 'csv';
       throw new Error(`Unexpected select: ${config.message}`);
     },
@@ -138,6 +140,7 @@ test('wizard skips status prompt for non-orders datasets', async () => {
     selectPrompt: async (config) => {
       promptsCalled.push(config.message);
       if (config.message.includes('dataset')) return 'trades';
+      if (config.message.includes('Transport')) return 'wss';
       if (config.message.includes('Output')) return 'console';
       throw new Error(`Unexpected select: ${config.message}`);
     },
@@ -163,6 +166,7 @@ test('wizard shows status prompt for orders dataset', async () => {
     selectPrompt: async (config) => {
       promptsCalled.push(config.message);
       if (config.message.includes('dataset')) return 'orders';
+      if (config.message.includes('Transport')) return 'wss';
       if (config.message.includes('Output')) return 'console';
       throw new Error(`Unexpected select: ${config.message}`);
     },
@@ -188,6 +192,7 @@ test('wizard uses "tokens" label for writer_actions dataset', async () => {
     selectPrompt: async (config) => {
       promptsCalled.push(config.message);
       if (config.message.includes('dataset')) return 'writer_actions';
+      if (config.message.includes('Transport')) return 'wss';
       if (config.message.includes('Output')) return 'console';
       throw new Error(`Unexpected select: ${config.message}`);
     },
@@ -209,6 +214,7 @@ test('wizard returns undefined limit when user enters 0', async () => {
   const mockPromptFns = {
     selectPrompt: async (config) => {
       if (config.message.includes('dataset')) return 'trades';
+      if (config.message.includes('Transport')) return 'wss';
       if (config.message.includes('Output')) return 'console';
       throw new Error(`Unexpected select: ${config.message}`);
     },

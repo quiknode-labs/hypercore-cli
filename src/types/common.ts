@@ -4,7 +4,8 @@ export type DatasetName =
   | 'events'
   | 'book_updates'
   | 'twap'
-  | 'writer_actions';
+  | 'writer_actions'
+  | 'blocks';
 export type OutputFormat = 'console' | 'json' | 'csv' | 'sqlite';
 export type ProgressMode = 'text' | 'json';
 

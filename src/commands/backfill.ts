@@ -3,12 +3,13 @@ import { Command } from 'commander';
 import { JsonRpcClient } from '../api/jsonrpc';
 import { resolveCredentials } from '../config/credentials';
 import { runBackfillRange } from '../core/backfill-runner';
-import { getDatasetNames, isDatasetName } from '../datasets/registry';
+import { getDatasetDefinition, getDatasetNames, isDatasetName } from '../datasets/registry';
 import { getNormalizer } from '../datasets/types';
 import { createEventFilter } from '../filters/event-filter';
 import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { createWriter } from '../outputs';
 import type { DatasetName, OutputFormat } from '../types/common';
+import { stderrColors as c, formatNumber } from '../utils/ansi';
 import { isInteractive } from '../utils/interactive';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
@@ -102,6 +103,10 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   }
 
   const dataset = await resolveDataset(options.dataset);
+  const definition = getDatasetDefinition(dataset);
+  if (definition.grpcOnly) {
+    throw new Error(`Dataset '${dataset}' is only available via gRPC streaming and does not support backfill.`);
+  }
   const fromBlock = parseBlockNumber(options.from, '--from');
   const toBlock = parseBlockNumber(options.to, '--to');
   const batchSize = parseBatchSize(options.batchSize);
@@ -157,9 +162,21 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
     filePath = generateOutputPath('backfill', dataset, output, options.tokens);
   }
   const limitLabel = limit > 0 ? String(limit) : 'unlimited';
-  logger.info(
-    `Backfilling '${dataset}' blocks ${fromBlock}-${toBlock} via ${urls.httpUrl} (batch=${batchSize}, output=${output}${filePath ? ` -> ${filePath}` : ''}, limit=${limitLabel}, ${summarizeFilters(filters)})`,
-  );
+  const totalBlocks = toBlock - fromBlock + 1;
+  const filterSummary = summarizeFilters(filters);
+  const bannerLines = [
+    `${c.bold('Backfill')}`,
+    `  dataset    ${c.cyan(dataset)}`,
+    `  blocks     ${c.cyan(`${fromBlock}-${toBlock}`)} (${formatNumber(totalBlocks)})`,
+    `  batch      ${c.cyan(String(batchSize))}`,
+    `  output     ${c.cyan(output)}${filePath ? ` -> ${filePath}` : ''}`,
+    `  limit      ${c.cyan(limitLabel)}`,
+    `  filters    ${c.cyan(filterSummary)}`,
+    `  endpoint   ${urls.httpUrl}`,
+  ];
+  for (const line of bannerLines) {
+    logger.info(line);
+  }
 
   const writer = createWriter({
     format: output,
@@ -167,6 +184,10 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
     filePath,
   });
   await writer.init({ dataset });
+
+  const isTTY = process.stderr.isTTY === true;
+  let lastProgressWrite = 0;
+  let progressEmitted = 0;
 
   const client = new JsonRpcClient(urls.httpUrl);
   try {
@@ -178,15 +199,40 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
       limit,
       normalize: getNormalizer(dataset),
       fetchBatchBlocks: async (from, to) => client.fetchBatchBlocks(dataset, from, to),
-      onEvent: async (event) => writer.write(event),
+      onEvent: async (event) => {
+        await writer.write(event);
+        progressEmitted += 1;
+      },
       matchesEvent,
-      log: (message) => logger.info(message),
+      log: (message) => {
+        // Extract block progress from runner messages for inline progress
+        const blockMatch = message.match(/batch.*?(\d+)-(\d+)/i);
+        if (blockMatch && progressMode === 'text') {
+          const currentBlock = Number.parseInt(blockMatch[2], 10);
+          const blocksProcessed = Math.min(currentBlock - fromBlock + 1, totalBlocks);
+          const pct = Math.min(100, Math.round((blocksProcessed / totalBlocks) * 100));
+          const now = Date.now();
+          if (isTTY) {
+            process.stderr.write(`\r\x1b[2K[info] Backfill ${formatNumber(blocksProcessed)}/${formatNumber(totalBlocks)} blocks (${pct}%) | ${formatNumber(progressEmitted)} events`);
+            lastProgressWrite = now;
+          } else if (now - lastProgressWrite >= 5000) {
+            logger.info(`Backfill ${formatNumber(blocksProcessed)}/${formatNumber(totalBlocks)} blocks (${pct}%) | ${formatNumber(progressEmitted)} events`);
+            lastProgressWrite = now;
+          }
+          return;
+        }
+        logger.info(message);
+      },
     });
+
+    if (isTTY && lastProgressWrite > 0) {
+      process.stderr.write('\n');
+    }
 
     const runtimeSeconds = Math.max((Date.now() - startedAt) / 1000, 0.001);
     const avgEps = result.emittedCount / runtimeSeconds;
     logger.info(
-      `Backfill done: emitted=${result.emittedCount}, seen=${result.seenEvents}, fetched_blocks=${result.fetchedBlocks}, batches=${result.batches}, runtime_s=${runtimeSeconds.toFixed(3)}, eps_avg=${avgEps.toFixed(2)}`,
+      `Backfill complete: ${formatNumber(result.emittedCount)} events from ${formatNumber(result.fetchedBlocks)} blocks in ${runtimeSeconds.toFixed(3)}s (${avgEps.toFixed(2)} eps)`,
     );
   } finally {
     await writer.flush();

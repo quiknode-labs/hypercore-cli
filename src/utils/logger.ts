@@ -1,4 +1,5 @@
 import type { AppLogger, ProgressMode } from '../types/common';
+import { stderrColors } from './ansi';
 
 export interface LoggerOptions {
   quiet: boolean;
@@ -11,6 +12,7 @@ export function createLogger(options: LoggerOptions): AppLogger {
   const mode = options.mode ?? 'text';
   const context = options.context ?? {};
   const redact = options.redact ?? ((message: string) => message);
+  const c = stderrColors;
 
   return {
     info(message: string): void {
@@ -20,7 +22,7 @@ export function createLogger(options: LoggerOptions): AppLogger {
           writeJsonLog('info', safeMessage, context);
           return;
         }
-        process.stderr.write(`${safeMessage}\n`);
+        process.stderr.write(`[info] ${safeMessage}\n`);
       }
     },
     warn(message: string): void {
@@ -29,7 +31,7 @@ export function createLogger(options: LoggerOptions): AppLogger {
         writeJsonLog('warn', safeMessage, context);
         return;
       }
-      process.stderr.write(`Warning: ${safeMessage}\n`);
+      process.stderr.write(`${c.yellow('[warn]')} ${safeMessage}\n`);
     },
     error(message: string): void {
       const safeMessage = redact(message);
@@ -37,7 +39,7 @@ export function createLogger(options: LoggerOptions): AppLogger {
         writeJsonLog('error', safeMessage, context);
         return;
       }
-      process.stderr.write(`Error: ${safeMessage}\n`);
+      process.stderr.write(`${c.red('[error]')} ${safeMessage}\n`);
     },
   };
 }

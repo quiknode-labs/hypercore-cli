@@ -9,7 +9,7 @@ import {
 
 test('dataset registry exposes phase 2 dataset list', () => {
   const names = getDatasetNames();
-  assert.deepEqual(names, ['orders', 'trades', 'events', 'book_updates', 'twap', 'writer_actions']);
+  assert.deepEqual(names, ['orders', 'trades', 'events', 'book_updates', 'twap', 'writer_actions', 'blocks']);
 });
 
 test('stream alias matching accepts hl.book for book_updates', () => {

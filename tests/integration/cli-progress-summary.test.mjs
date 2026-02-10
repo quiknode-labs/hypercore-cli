@@ -133,7 +133,7 @@ test('backfill emits structured progress JSON and shutdown summary with redacted
     assert.ok(logs.every((entry) => typeof entry.level === 'string'));
     assert.ok(logs.every((entry) => typeof entry.message === 'string'));
 
-    assert.ok(logs.some((entry) => entry.message.startsWith('Backfill done:')));
+    assert.ok(logs.some((entry) => entry.message.startsWith('Backfill complete:')));
     assert.ok(logs.some((entry) => entry.command === 'backfill'));
     assert.ok(output.stderr.includes('****/hypercore'));
     assert.equal(output.stderr.includes('abc123'), false);

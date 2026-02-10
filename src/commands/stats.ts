@@ -1,12 +1,17 @@
 import { Command } from 'commander';
 
+import { GrpcStreamClient } from '../api/grpc-client';
 import { resolveCredentials } from '../config/credentials';
-import { getDatasetNames, isDatasetName } from '../datasets/registry';
+import { getDatasetDefinition, getDatasetNames, isDatasetName } from '../datasets/registry';
 import { getNormalizer } from '../datasets/types';
 import { buildFilters, summarizeFilters } from '../filters/filter-builder';
 import { runStreamRuntime } from '../core/stream-runtime';
+import { WsClient } from '../core/ws-client';
 import type { DatasetName, ProgressMode } from '../types/common';
-import type { NormalizedEvent } from '../types/stream';
+import type { NormalizedEvent, RawStreamBlock } from '../types/stream';
+import type { TransportType } from '../types/transport';
+import { stdoutColors, formatNumber } from '../utils/ansi';
+import { isInteractive, selectPrompt } from '../utils/interactive';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
@@ -26,6 +31,7 @@ interface StatsOptions {
   limit?: string;
   quiet?: boolean;
   progress?: string;
+  transport?: string;
 }
 
 interface StatsSnapshot {
@@ -37,6 +43,12 @@ interface StatsSnapshot {
   lastEventSecondsAgo: number;
   primary: Array<{ key: string; count: number }>;
   coin: Array<{ key: string; count: number }>;
+  blockRange: { min: number; max: number } | null;
+  avgBlockIntervalMs: number | null;
+  dataKeys: Array<{ key: string; count: number }>;
+  arrayFieldItems: Array<{ key: string; count: number }>;
+  totalDataBytes: number;
+  avgDataBytes: number;
 }
 
 class LiveStats {
@@ -49,6 +61,14 @@ class LiveStats {
   private lastSnapshotTime = Date.now();
   private lastSnapshotTotal = 0;
   private peakEventsPerSecond = 0;
+  private blockMin = Number.MAX_SAFE_INTEGER;
+  private blockMax = 0;
+  private dataKeys = new Map<string, number>();
+  private arrayFieldItems = new Map<string, number>();
+  private totalDataBytes = 0;
+  private firstBlockTime = 0;
+  private lastBlockTime = 0;
+  private blockTimeCount = 0;
 
   constructor(dataset: DatasetName) {
     this.dataset = dataset;
@@ -84,6 +104,31 @@ class LiveStats {
           increment(this.coin, event.token);
         }
         return;
+      case 'blocks': {
+        if (event.blockNumber < this.blockMin) this.blockMin = event.blockNumber;
+        if (event.blockNumber > this.blockMax) this.blockMax = event.blockNumber;
+        this.totalDataBytes += Buffer.byteLength(event.dataJson, 'utf8');
+        const bt = Date.parse(event.blockTime);
+        if (!Number.isNaN(bt)) {
+          if (this.blockTimeCount === 0) this.firstBlockTime = bt;
+          this.lastBlockTime = bt;
+          this.blockTimeCount += 1;
+        }
+        try {
+          const parsed = JSON.parse(event.dataJson);
+          if (parsed && typeof parsed === 'object') {
+            for (const [key, value] of Object.entries(parsed)) {
+              increment(this.dataKeys, key);
+              if (Array.isArray(value)) {
+                this.arrayFieldItems.set(key, (this.arrayFieldItems.get(key) ?? 0) + value.length);
+              }
+            }
+          }
+        } catch {
+          // skip unparseable data
+        }
+        return;
+      }
     }
   }
 
@@ -109,6 +154,14 @@ class LiveStats {
       lastEventSecondsAgo: Math.max((now - this.lastEventAt) / 1000, 0),
       primary: topEntries(this.primary),
       coin: topEntries(this.coin),
+      blockRange: this.blockMin <= this.blockMax ? { min: this.blockMin, max: this.blockMax } : null,
+      avgBlockIntervalMs: this.blockTimeCount >= 2
+        ? (this.lastBlockTime - this.firstBlockTime) / (this.blockTimeCount - 1)
+        : null,
+      dataKeys: topEntries(this.dataKeys),
+      arrayFieldItems: topEntries(this.arrayFieldItems),
+      totalDataBytes: this.totalDataBytes,
+      avgDataBytes: this.total > 0 ? Math.round(this.totalDataBytes / this.total) : 0,
     };
   }
 }
@@ -134,6 +187,7 @@ export function registerStatsCommand(program: Command): void {
     )
     .option('--token <token>', 'Quicknode token override')
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
+    .option('--transport <type>', 'Transport protocol: wss (default), grpc', 'wss')
     .action(async (options: StatsOptions) => {
       await statsAction(options);
     });
@@ -145,6 +199,7 @@ function collectRepeated(value: string, previous: string[]): string[] {
 
 async function statsAction(options: StatsOptions): Promise<void> {
   const dataset = await resolveDataset(options.dataset);
+  const transport = await resolveTransportInteractive(options.transport, dataset);
   const limit = resolveLimit(options.limit);
   const intervalSeconds = resolveIntervalSeconds(options.interval);
   const progressMode = resolveProgressMode(options.progress);
@@ -179,17 +234,24 @@ async function statsAction(options: StatsOptions): Promise<void> {
     rawFilters: options.filter,
   });
   const limitLabel = limit > 0 ? String(limit) : 'unlimited';
-  logger.info(`Connecting to ${urls.wsUrl} (dataset=${dataset}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
+  const connectUrl = transport === 'grpc' ? urls.grpcUrl : urls.wsUrl;
+  logger.info(`Connecting to ${connectUrl} (transport=${transport}, dataset=${dataset}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
 
   const stats = new LiveStats(dataset);
   const timer = setInterval(() => {
     writeSnapshot(stats, progressMode);
   }, intervalSeconds * 1000);
 
+  const createTransport = transport === 'grpc'
+    ? (opts: { onBlock: (block: RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
+        new GrpcStreamClient({ grpcUrl: urls.grpcUrl, token: credentials.token, dataset, filters, ...opts })
+    : (opts: { onBlock: (block: RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
+        new WsClient({ url: urls.wsUrl, dataset, filters, ...opts });
+
   try {
     await runStreamRuntime({
       dataset,
-      wsUrl: urls.wsUrl,
+      createTransport,
       httpUrl: urls.httpUrl,
       filters,
       normalize: getNormalizer(dataset),
@@ -205,7 +267,7 @@ async function statsAction(options: StatsOptions): Promise<void> {
     clearInterval(timer);
     const finalSnapshot = writeSnapshot(stats, progressMode);
     logger.info(
-      `Stats done: total=${finalSnapshot.total}, runtime_s=${finalSnapshot.runtimeSeconds.toFixed(3)}, eps_avg=${finalSnapshot.eventsPerSecondAvg.toFixed(2)}`,
+      `Stats complete: ${formatNumber(finalSnapshot.total)} events in ${finalSnapshot.runtimeSeconds.toFixed(3)}s (${finalSnapshot.eventsPerSecondAvg.toFixed(2)} eps)`,
     );
   }
 }
@@ -229,21 +291,44 @@ function writeSnapshot(stats: LiveStats, mode: ProgressMode): StatsSnapshot {
 }
 
 function renderSnapshotText(stats: LiveStats, snapshot: StatsSnapshot): string {
+  const sc = stdoutColors;
   const runtime = formatDuration(snapshot.runtimeSeconds);
-  const primaryLabel = primaryBucketLabel(stats.dataset);
-  const secondaryLabel = secondaryBucketLabel(stats.dataset);
 
   const lines = [
-    `Stats (${stats.dataset})`,
-    `Runtime: ${runtime} | Total: ${snapshot.total} | Last event: ${snapshot.lastEventSecondsAgo.toFixed(1)}s ago`,
+    `${sc.bold(`Stats (${stats.dataset})`)}`,
+    `Runtime: ${runtime} | Total: ${formatNumber(snapshot.total)} | Last event: ${snapshot.lastEventSecondsAgo.toFixed(1)}s ago`,
     `Events/sec avg=${snapshot.eventsPerSecondAvg.toFixed(2)} interval=${snapshot.eventsPerSecondInterval.toFixed(2)} peak=${snapshot.eventsPerSecondPeak.toFixed(2)}`,
-    '',
-    `${primaryLabel}:`,
-    ...renderCounts(snapshot.primary),
   ];
 
-  if (snapshot.coin.length > 0 && secondaryLabel) {
-    lines.push('', secondaryLabel, ...renderCounts(snapshot.coin));
+  if (stats.dataset === 'blocks') {
+    lines.push('---');
+    if (snapshot.blockRange) {
+      lines.push(`Block range: ${formatNumber(snapshot.blockRange.min)} - ${formatNumber(snapshot.blockRange.max)} (${formatNumber(snapshot.blockRange.max - snapshot.blockRange.min + 1)} blocks)`);
+    } else {
+      lines.push('Block range: (no data yet)');
+    }
+    if (snapshot.avgBlockIntervalMs !== null) {
+      const intervalSec = snapshot.avgBlockIntervalMs / 1000;
+      lines.push(`Avg block interval: ${intervalSec.toFixed(2)}s`);
+    }
+    lines.push(`Avg payload size: ${formatBytes(snapshot.avgDataBytes)}`);
+    if (snapshot.arrayFieldItems.length > 0) {
+      lines.push('---', 'Array items (total):');
+      for (const entry of snapshot.arrayFieldItems) {
+        const avg = snapshot.total > 0 ? (entry.count / snapshot.total).toFixed(1) : '0';
+        lines.push(`- ${entry.key}: ${formatNumber(entry.count)} (${avg}/block)`);
+      }
+    }
+    if (snapshot.dataKeys.length > 0) {
+      lines.push('---', 'By data key:', ...renderCounts(snapshot.dataKeys));
+    }
+  } else {
+    const primaryLabel = primaryBucketLabel(stats.dataset);
+    const secondaryLabel = secondaryBucketLabel(stats.dataset);
+    lines.push('---', `${primaryLabel}:`, ...renderCounts(snapshot.primary));
+    if (snapshot.coin.length > 0 && secondaryLabel) {
+      lines.push('---', secondaryLabel, ...renderCounts(snapshot.coin));
+    }
   }
 
   return `${lines.join('\n')}\n`;
@@ -259,6 +344,7 @@ function secondaryBucketLabel(dataset: DatasetName): string | null {
     case 'writer_actions':
       return 'By token:';
     case 'events':
+    case 'blocks':
       return null;
   }
 }
@@ -267,7 +353,7 @@ function renderCounts(items: Array<{ key: string; count: number }>): string[] {
   if (items.length === 0) {
     return ['- (no data yet)'];
   }
-  return items.map((item) => `- ${item.key}: ${item.count}`);
+  return items.map((item) => `- ${item.key}: ${formatNumber(item.count)}`);
 }
 
 function resolveIntervalSeconds(input?: string): number {
@@ -330,7 +416,48 @@ function primaryBucketLabel(dataset: DatasetName): string {
       return 'By status';
     case 'writer_actions':
       return 'By action type';
+    case 'blocks':
+      return 'By block';
   }
+}
+
+const VALID_TRANSPORTS: TransportType[] = ['wss', 'grpc'];
+
+async function resolveTransportInteractive(input: string | undefined, dataset: DatasetName): Promise<TransportType> {
+  const definition = getDatasetDefinition(dataset);
+
+  // Explicit flag always wins
+  if (input && input !== 'wss') {
+    const value = input as TransportType;
+    if (!VALID_TRANSPORTS.includes(value)) {
+      throw new Error(`Invalid --transport '${input}'. Expected one of: ${VALID_TRANSPORTS.join(', ')}`);
+    }
+    return value;
+  }
+
+  // gRPC-only datasets auto-select grpc
+  if (definition.grpcOnly) {
+    return 'grpc';
+  }
+
+  // Interactive mode: prompt for transport
+  if (isInteractive() && (!input || input === 'wss')) {
+    return selectPrompt<TransportType>({
+      message: 'Transport',
+      options: [
+        { value: 'wss', label: 'WSS', description: 'WebSocket (default)' },
+        { value: 'grpc', label: 'gRPC', description: 'gRPC transport' },
+      ],
+    });
+  }
+
+  return (input ?? 'wss') as TransportType;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatDuration(secondsInput: number): string {

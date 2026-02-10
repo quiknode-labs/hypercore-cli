@@ -1,5 +1,6 @@
 import type { DatasetName } from '../types/common';
 import type {
+  NormalizedBlockEvent,
   NormalizedBookUpdateEvent,
   NormalizedEvent,
   NormalizedOrderEvent,
@@ -35,6 +36,7 @@ export class SqliteWriter implements OutputWriter {
   private bookUpdateInsert: BetterSqliteStatement | null = null;
   private twapInsert: BetterSqliteStatement | null = null;
   private writerActionInsert: BetterSqliteStatement | null = null;
+  private blockInsert: BetterSqliteStatement | null = null;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -140,6 +142,14 @@ export class SqliteWriter implements OutputWriter {
         @eventTime, @rawJson
       )
     `);
+
+    this.blockInsert = this.db.prepare(`
+      INSERT OR IGNORE INTO blocks (
+        event_key, block_number, block_time, local_time, data_json, raw_json
+      ) VALUES (
+        @eventKey, @blockNumber, @blockTime, @localTime, @dataJson, @rawJson
+      )
+    `);
   }
 
   async write(event: NormalizedEvent): Promise<void> {
@@ -165,6 +175,9 @@ export class SqliteWriter implements OutputWriter {
         return;
       case 'writer_actions':
         this.writerActionInsert?.run(writerActionRow(event));
+        return;
+      case 'blocks':
+        this.blockInsert?.run(blockRow(event));
         return;
     }
   }
@@ -328,6 +341,19 @@ export class SqliteWriter implements OutputWriter {
       CREATE INDEX IF NOT EXISTS idx_writer_actions_user ON writer_actions(user_address);
       CREATE INDEX IF NOT EXISTS idx_writer_actions_type ON writer_actions(action_type);
       CREATE INDEX IF NOT EXISTS idx_writer_actions_token ON writer_actions(token);
+
+      CREATE TABLE IF NOT EXISTS blocks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_key TEXT NOT NULL UNIQUE,
+        block_number INTEGER NOT NULL,
+        block_time TEXT NOT NULL,
+        local_time TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        raw_json TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_blocks_block_number ON blocks(block_number);
     `);
   }
 }
@@ -369,6 +395,12 @@ function twapRow(event: NormalizedTwapEvent): Record<string, unknown> {
 }
 
 function writerActionRow(event: NormalizedWriterActionEvent): Record<string, unknown> {
+  return {
+    ...event,
+  };
+}
+
+function blockRow(event: NormalizedBlockEvent): Record<string, unknown> {
   return {
     ...event,
   };

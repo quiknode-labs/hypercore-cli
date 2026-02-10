@@ -1,5 +1,6 @@
-import { listDatasetDefinitions } from '../datasets/registry';
+import { getDatasetDefinition, listDatasetDefinitions } from '../datasets/registry';
 import type { DatasetName, OutputFormat } from '../types/common';
+import type { TransportType } from '../types/transport';
 import {
   selectPrompt,
   textPrompt,
@@ -14,6 +15,7 @@ import {
 
 export interface WizardResult {
   dataset: DatasetName;
+  transport: TransportType;
   tokens?: string;
   users?: string;
   statuses?: string;
@@ -24,6 +26,7 @@ export interface WizardResult {
 export interface WizardContext {
   /** Pre-supplied flags that skip the corresponding wizard step */
   datasetFlag?: string;
+  transportFlag?: string;
   tokensFlag?: string;
   usersFlag?: string;
   statusesFlag?: string;
@@ -40,6 +43,11 @@ export interface WizardPromptFns {
 /* ------------------------------------------------------------------ */
 /*  Output format metadata                                             */
 /* ------------------------------------------------------------------ */
+
+const TRANSPORT_OPTIONS: SelectOption<TransportType>[] = [
+  { value: 'wss', label: 'WSS', description: 'WebSocket (default)' },
+  { value: 'grpc', label: 'gRPC', description: 'gRPC transport' },
+];
 
 const OUTPUT_OPTIONS: SelectOption<OutputFormat>[] = [
   { value: 'console', label: 'console', description: 'Pretty formatted terminal output' },
@@ -64,27 +72,38 @@ export async function runStreamWizard(
     ? (context.datasetFlag as DatasetName)
     : await promptDataset(select);
 
-  // Step 2: Token filter
+  // Step 2: Transport
+  const definition = getDatasetDefinition(dataset);
+  let transport: TransportType;
+  if (context.transportFlag) {
+    transport = context.transportFlag as TransportType;
+  } else if (definition.grpcOnly) {
+    transport = 'grpc';
+  } else {
+    transport = await promptTransport(select);
+  }
+
+  // Step 3: Token filter
   const tokens = context.tokensFlag ?? (await promptFilter(text, dataset));
 
-  // Step 3: User filter
+  // Step 4: User filter
   const users = context.usersFlag ?? (await promptUsers(text));
 
-  // Step 4: Status filter (orders only)
+  // Step 5: Status filter (orders only)
   let statuses: string | undefined = context.statusesFlag;
   if (!statuses && dataset === 'orders') {
     statuses = await promptStatuses(text);
   }
 
-  // Step 5: Output format
+  // Step 6: Output format
   const output = context.outputFlag
     ? (context.outputFlag as OutputFormat)
     : await promptOutput(select);
 
-  // Step 6: Limit
+  // Step 7: Limit
   const limit = context.limitFlag ?? (await promptLimit(text));
 
-  return { dataset, tokens, users, statuses, output, limit };
+  return { dataset, transport, tokens, users, statuses, output, limit };
 }
 
 /* ------------------------------------------------------------------ */
@@ -104,6 +123,15 @@ async function promptDataset(
   return select({
     message: 'Select dataset',
     options,
+  });
+}
+
+async function promptTransport(
+  select: <T>(config: SelectPromptConfig<T>) => Promise<T>,
+): Promise<TransportType> {
+  return select({
+    message: 'Transport',
+    options: TRANSPORT_OPTIONS,
   });
 }
 

@@ -9,6 +9,7 @@ export interface DatasetDefinition {
   wsStreamType: string;
   wsAliases: string[];
   backfillStream: string;
+  grpcOnly?: boolean;
   keyFields: string[];
   sampleEvent: unknown;
 }
@@ -173,9 +174,26 @@ const DEFINITIONS: Record<DatasetName, DatasetDefinition> = {
       },
     },
   },
+  blocks: {
+    name: 'blocks',
+    displayName: 'Blocks',
+    description: 'Raw block data (gRPC only)',
+    docsUrl: 'https://www.quicknode.com/docs/hyperliquid/datasets/blocks',
+    volume: 'Very High',
+    wsStreamType: '',
+    wsAliases: [],
+    backfillStream: '',
+    grpcOnly: true,
+    keyFields: ['block_number'],
+    sampleEvent: {
+      block_number: 123456,
+      timestamp: 1767351660123,
+      data: '{}',
+    },
+  },
 };
 
-const ORDER: DatasetName[] = ['orders', 'trades', 'events', 'book_updates', 'twap', 'writer_actions'];
+const ORDER: DatasetName[] = ['orders', 'trades', 'events', 'book_updates', 'twap', 'writer_actions', 'blocks'];
 
 export function getDatasetNames(): DatasetName[] {
   return [...ORDER];
