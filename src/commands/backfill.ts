@@ -15,7 +15,9 @@ import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
 import { generateOutputPath } from '../utils/output-path';
-import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { createConnection } from '../x402/connection';
+import { captureX402UsageBaseline, logX402UsageSummary, startPeriodicCreditCheck } from '../x402/usage';
 import { runBackfillWizard } from './backfill-wizard';
 
 const DATASETS = getDatasetNames();
@@ -39,6 +41,9 @@ interface BackfillOptions {
   filter?: string[];
   quiet?: boolean;
   stdout?: boolean;
+  mode?: string;
+  walletKey?: string;
+  x402Url?: string;
 }
 
 export function registerBackfillCommand(program: Command): void {
@@ -65,6 +70,9 @@ export function registerBackfillCommand(program: Command): void {
       `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
+    .option('--mode <mode>', 'Connection mode: quicknode, x402')
+    .option('--wallet-key <key>', 'Wallet private key for x402 payments')
+    .option('--x402-url <url>', 'x402 proxy base URL override')
     .option('--stdout', 'Write csv/json output to stdout instead of file', false)
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
     .action(async (options: BackfillOptions) => {
@@ -125,12 +133,20 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   const credentials = await resolveCredentials({
     endpointFlag: options.endpoint,
     tokenFlag: options.token,
+    modeFlag: options.mode,
+    walletKeyFlag: options.walletKey,
+    x402BaseUrlFlag: options.x402Url,
     promptOnMissing: true,
     prompt: promptAdapter,
   });
 
-  const redact = (message: string): string =>
-    redactSensitiveText(message, { token: credentials.token });
+  const redact = (message: string): string => {
+    let result = redactSensitiveText(message, { token: credentials.token });
+    if (credentials.walletKey) {
+      result = result.replace(new RegExp(credentials.walletKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '****');
+    }
+    return result;
+  };
   const logger = createLogger({
     quiet: options.quiet === true,
     mode: progressMode,
@@ -144,7 +160,8 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
     },
     redact,
   });
-  const urls = deriveEndpointUrls(credentials.endpoint, credentials.token);
+  const conn = await createConnection(credentials, logger);
+  const creditUsageBaseline = await captureX402UsageBaseline(conn, logger);
 
   const filters = buildFilters({
     dataset,
@@ -172,7 +189,7 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
     `  output     ${c.cyan(output)}${filePath ? ` -> ${filePath}` : ''}`,
     `  limit      ${c.cyan(limitLabel)}`,
     `  filters    ${c.cyan(filterSummary)}`,
-    `  endpoint   ${urls.httpUrl}`,
+    `  endpoint   ${conn.httpUrl}`,
   ];
   for (const line of bannerLines) {
     logger.info(line);
@@ -189,7 +206,8 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
   let lastProgressWrite = 0;
   let progressEmitted = 0;
 
-  const client = new JsonRpcClient(urls.httpUrl);
+  const client = new JsonRpcClient(conn.httpUrl, conn.fetchFn);
+  const creditChecker = startPeriodicCreditCheck(conn, logger);
   try {
     const result = await runBackfillRange({
       dataset,
@@ -235,11 +253,14 @@ async function backfillAction(options: BackfillOptions): Promise<void> {
       `Backfill complete: ${formatNumber(result.emittedCount)} events from ${formatNumber(result.fetchedBlocks)} blocks in ${runtimeSeconds.toFixed(3)}s (${avgEps.toFixed(2)} eps)`,
     );
   } finally {
+    creditChecker?.stop();
     await writer.flush();
     await writer.close();
     if (filePath) {
       logger.info(`Output written to: ${filePath}`);
     }
+    await logX402UsageSummary(conn, creditUsageBaseline, logger);
+    conn.cleanup?.();
   }
 }
 

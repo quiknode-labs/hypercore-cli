@@ -32,6 +32,8 @@ export interface WizardContext {
   statusesFlag?: string;
   outputFlag?: string;
   limitFlag?: string;
+  /** Connection mode — used to filter unavailable datasets/transports */
+  connectionMode?: 'quicknode' | 'x402';
 }
 
 /** Injectable prompt functions for testing */
@@ -67,15 +69,20 @@ export async function runStreamWizard(
   const select = promptFns?.selectPrompt ?? selectPrompt;
   const text = promptFns?.textPrompt ?? textPrompt;
 
+  const isX402 = context.connectionMode === 'x402';
+
   // Step 1: Dataset
   const dataset = context.datasetFlag
     ? (context.datasetFlag as DatasetName)
-    : await promptDataset(select);
+    : await promptDataset(select, isX402);
 
   // Step 2: Transport
   const definition = getDatasetDefinition(dataset);
   let transport: TransportType;
-  if (context.transportFlag) {
+  if (isX402) {
+    // x402 mode only supports WSS (gRPC requires HTTP/2 which x402 proxy cannot provide)
+    transport = 'wss';
+  } else if (context.transportFlag) {
     transport = context.transportFlag as TransportType;
   } else if (definition.grpcOnly) {
     transport = 'grpc';
@@ -83,16 +90,17 @@ export async function runStreamWizard(
     transport = await promptTransport(select);
   }
 
-  // Step 3: Token filter
-  const tokens = context.tokensFlag ?? (await promptFilter(text, dataset));
-
-  // Step 4: User filter
-  const users = context.usersFlag ?? (await promptUsers(text));
-
-  // Step 5: Status filter (orders only)
-  let statuses: string | undefined = context.statusesFlag;
-  if (!statuses && dataset === 'orders') {
-    statuses = await promptStatuses(text);
+  // Steps 3-5: Filters (blocks dataset has no filters — skip entirely)
+  let tokens: string | undefined;
+  let users: string | undefined;
+  let statuses: string | undefined;
+  if (dataset !== 'blocks') {
+    tokens = context.tokensFlag ?? (await promptFilter(text, dataset));
+    users = context.usersFlag ?? (await promptUsers(text));
+    statuses = context.statusesFlag;
+    if (!statuses && dataset === 'orders') {
+      statuses = await promptStatuses(text);
+    }
   }
 
   // Step 6: Output format
@@ -112,8 +120,13 @@ export async function runStreamWizard(
 
 async function promptDataset(
   select: <T>(config: SelectPromptConfig<T>) => Promise<T>,
+  isX402 = false,
 ): Promise<DatasetName> {
-  const definitions = listDatasetDefinitions();
+  let definitions = listDatasetDefinitions();
+  if (isX402) {
+    // x402 mode cannot support gRPC-only datasets (e.g. blocks) — requires HTTP/2
+    definitions = definitions.filter((def) => !def.grpcOnly);
+  }
   const options: SelectOption<DatasetName>[] = definitions.map((def) => ({
     value: def.name,
     label: def.displayName.toLowerCase().padEnd(16),

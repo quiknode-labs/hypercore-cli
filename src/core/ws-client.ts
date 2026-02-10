@@ -6,6 +6,13 @@ import { summarizeFilters, type FilterMap } from '../filters/filter-builder';
 import type { DatasetName } from '../types/common';
 import type { RawStreamBlock } from '../types/stream';
 
+export class X402CreditExhaustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'X402CreditExhaustedError';
+  }
+}
+
 export interface WsClientOptions {
   url: string;
   dataset: DatasetName;
@@ -64,6 +71,10 @@ export class WsClient {
 
           const rpcError = getJsonRpcError(parsed);
           if (rpcError) {
+            if (rpcError.code === -32000 && /credits?\s*exhausted/i.test(rpcError.message)) {
+              reject(new X402CreditExhaustedError(rpcError.message));
+              return;
+            }
             reject(new Error(`WebSocket JSON-RPC error ${rpcError.code}: ${rpcError.message}`));
             return;
           }
@@ -90,7 +101,14 @@ export class WsClient {
         }
       });
 
-      socket.on('close', () => {
+      socket.on('close', (...args: unknown[]) => {
+        const [code, reason] = args;
+        if (code === 4402) {
+          reject(new X402CreditExhaustedError('WebSocket closed with code 4402: credits exhausted'));
+          return;
+        }
+        const reasonStr = reason ? String(reason) : '';
+        this.options.onInfo(`WebSocket closed (code=${code ?? 'unknown'}${reasonStr ? `, reason=${reasonStr}` : ''})`);
         resolve('closed');
       });
 

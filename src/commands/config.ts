@@ -9,6 +9,13 @@ import {
   isKeychainAvailable,
   saveToken,
 } from '../config/keychain';
+import {
+  clearWalletKey,
+  getSavedWalletKey,
+  getSavedWalletKeyStorageBackend,
+  getWalletKeyFilePath,
+  saveWalletKey,
+} from '../config/wallet-keychain';
 import { getConfigPath, readSavedConfig, writeSavedConfig, clearSavedConfig } from '../config/storage';
 import { maskToken } from '../config/credentials';
 import { stdoutColors as sc } from '../utils/ansi';
@@ -21,6 +28,7 @@ import {
   redactEndpointUrl,
   sanitizeEndpointForStorage,
 } from '../utils/url';
+import { X402_DEFAULT_BASE_URL, X402_DEFAULT_NETWORK } from '../x402/constants';
 
 interface ConfigOptions {
   show?: boolean;
@@ -30,13 +38,14 @@ interface ConfigOptions {
 export function registerConfigCommand(program: Command): void {
   program
     .command('config')
-    .description('Configure Quicknode endpoint and API token')
+    .description('Configure Quicknode endpoint or x402 micropayments settings')
     .option('--show', 'Show current saved config (token masked)')
     .option('--clear', 'Clear saved endpoint and token')
     .action(async (options: ConfigOptions) => {
       if (options.clear) {
         await clearSavedConfig();
         await clearSavedToken();
+        await clearWalletKey();
         process.stdout.write('Cleared saved configuration.\n');
         return;
       }
@@ -44,6 +53,8 @@ export function registerConfigCommand(program: Command): void {
       if (options.show) {
         const saved = await readSavedConfig();
         const token = await getSavedToken();
+        const walletKey = await getSavedWalletKey();
+        const walletStorageBackend = await getSavedWalletKeyStorageBackend();
         const keychainAvailable = await isKeychainAvailable();
         const preferredBackend = await getPreferredTokenStorageBackend();
         const savedBackend = await getSavedTokenStorageBackend();
@@ -51,25 +62,52 @@ export function registerConfigCommand(program: Command): void {
 
         const lines = [
           sc.bold('Configuration'),
-          `  endpoint    ${endpointDisplay}`,
-          `  token       ${maskToken(token)}`,
-          `  storage     ${savedBackend}${keychainAvailable ? '' : ' (keychain unavailable)'}`,
-          `  preference  ${preferredBackend}`,
-          `  config      ${getConfigPath()}`,
+          `  mode       ${saved.mode ?? 'quicknode'}`,
+          `  endpoint   ${endpointDisplay}`,
+          `  token      ${maskToken(token)}`,
+          `  storage    ${savedBackend}${keychainAvailable ? '' : ' (keychain unavailable)'}`,
+          `  preference ${preferredBackend}`,
+          `  config     ${getConfigPath()}`,
         ];
         if (savedBackend === 'file') {
-          lines.push(`  token file  ${getTokenFilePath()} (permissions 600)`);
+          lines.push(`  token file ${getTokenFilePath()} (permissions 600)`);
         }
         process.stdout.write(`${lines.join('\n')}\n`);
+
+        if (saved.mode === 'x402' || walletKey) {
+          const x402Lines = ['\nx402 configuration:'];
+          if (walletKey) {
+            try {
+              const { privateKeyToAccount } = await import('viem/accounts');
+              const account = privateKeyToAccount(walletKey as `0x${string}`);
+              x402Lines.push(`  Wallet address: ${account.address}`);
+            } catch {
+              x402Lines.push(`  Wallet key: ${maskToken(walletKey)}`);
+            }
+          } else {
+            x402Lines.push('  Wallet key: (not set)');
+          }
+          x402Lines.push(`  Base URL: ${saved.x402BaseUrl ?? X402_DEFAULT_BASE_URL}`);
+          x402Lines.push(`  Network: ${saved.x402Network ?? X402_DEFAULT_NETWORK}`);
+          x402Lines.push(`  Payment chain: ${saved.x402Chain ?? 'base-sepolia'}`);
+          x402Lines.push(`  Wallet storage: ${walletStorageBackend}`);
+          if (walletStorageBackend === 'file') {
+            x402Lines.push(`  Wallet key file: ${getWalletKeyFilePath()} (permissions 600)`);
+          }
+          process.stdout.write(`${x402Lines.join('\n')}\n`);
+        }
         return;
       }
 
       const saved = await readSavedConfig();
       const existingToken = await getSavedToken();
 
-      if (saved.endpoint) {
-        process.stdout.write('\nYou already have a saved endpoint:\n');
-        process.stdout.write(`  Endpoint: ${redactEndpointUrl(saved.endpoint)}\n`);
+      if (saved.endpoint || saved.mode) {
+        process.stdout.write('\nYou already have a saved configuration:\n');
+        process.stdout.write(`  Mode: ${saved.mode ?? 'quicknode'}\n`);
+        if (saved.endpoint) {
+          process.stdout.write(`  Endpoint: ${redactEndpointUrl(saved.endpoint)}\n`);
+        }
         process.stdout.write(`  Token: ${maskToken(existingToken)}\n\n`);
         process.stdout.write('To view full details, use: hypercore-cli config --show\n');
 
@@ -80,6 +118,60 @@ export function registerConfigCommand(program: Command): void {
         process.stdout.write('\n');
       }
 
+      const mode = await selectPrompt({
+        message: 'Select connection mode',
+        options: [
+          { value: 'quicknode', label: 'Quicknode Direct', description: 'All datasets + gRPC support' },
+          { value: 'x402', label: 'x402 Micropayments', description: 'Pay with USDC (blocks & gRPC not yet supported)' },
+        ],
+      });
+
+      if (mode === 'x402') {
+        process.stdout.write('\nNote: Private key must include the 0x prefix (e.g. 0x1234...abcd)\n');
+        const walletKeyInput = await promptAdapter.ask('Wallet private key (0x...): ', { secret: true });
+        if (!walletKeyInput) {
+          throw new Error('Wallet key is required for x402 mode');
+        }
+
+        let walletAddress: string;
+        try {
+          const { privateKeyToAccount } = await import('viem/accounts');
+          const account = privateKeyToAccount(walletKeyInput as `0x${string}`);
+          walletAddress = account.address;
+        } catch {
+          throw new Error('Invalid wallet private key');
+        }
+
+        const chainAnswer = await promptAdapter.ask('Payment chain (base-sepolia/base, default: base-sepolia): ');
+        const chain = (chainAnswer.trim() === 'base' ? 'base' : 'base-sepolia') as 'base-sepolia' | 'base';
+
+        const baseUrlAnswer = await promptAdapter.ask(
+          `x402 proxy URL (default: ${X402_DEFAULT_BASE_URL}): `,
+        );
+        const baseUrl = baseUrlAnswer.trim() || undefined;
+
+        await writeSavedConfig({
+          mode: 'x402',
+          x402BaseUrl: baseUrl,
+          x402Network: X402_DEFAULT_NETWORK,
+          x402Chain: chain,
+        });
+        await saveWalletKey(walletKeyInput);
+        const walletStorageBackend = await getSavedWalletKeyStorageBackend();
+
+        process.stdout.write(`\nSaved x402 configuration to ${getConfigPath()}\n`);
+        process.stdout.write(`  Wallet address: ${walletAddress}\n`);
+        process.stdout.write(`  Payment chain: ${chain}\n`);
+        process.stdout.write(`  Base URL: ${baseUrl ?? X402_DEFAULT_BASE_URL}\n`);
+        if (walletStorageBackend === 'keychain') {
+          process.stdout.write('  Wallet key storage: system keychain\n');
+        } else if (walletStorageBackend === 'file') {
+          process.stdout.write(`  Wallet key storage: ${getWalletKeyFilePath()} (permissions 600)\n`);
+        }
+        return;
+      }
+
+      // Quicknode Direct mode
       process.stdout.write('Quicknode onboarding:\n');
       const dashboardUrl = 'https://dashboard.quicknode.com?utm_source=qn-hype-cli';
       const link = `\x1b]8;;${dashboardUrl}\x1b\\Quicknode account\x1b]8;;\x1b\\`;
@@ -144,7 +236,7 @@ export function registerConfigCommand(program: Command): void {
         token = wssToken;
       }
 
-      await writeSavedConfig({ endpoint });
+      await writeSavedConfig({ mode: 'quicknode', endpoint });
       await saveToken(token);
 
       const tokenStorageBackend = await getSavedTokenStorageBackend();

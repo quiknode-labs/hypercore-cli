@@ -16,7 +16,9 @@ import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
 import { generateOutputPath } from '../utils/output-path';
-import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { createConnection } from '../x402/connection';
+import { captureX402UsageBaseline, logX402UsageSummary, startPeriodicCreditCheck } from '../x402/usage';
 import { runStreamWizard } from './stream-wizard';
 
 const DATASETS = getDatasetNames();
@@ -37,6 +39,9 @@ interface StreamOptions {
   filter?: string[];
   stdout?: boolean;
   transport?: string;
+  mode?: string;
+  walletKey?: string;
+  x402Url?: string;
 }
 
 export function registerStreamCommand(program: Command): void {
@@ -60,6 +65,9 @@ export function registerStreamCommand(program: Command): void {
       `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
+    .option('--mode <mode>', 'Connection mode: quicknode, x402')
+    .option('--wallet-key <key>', 'Wallet private key for x402 payments')
+    .option('--x402-url <url>', 'x402 proxy base URL override')
     .option('--stdout', 'Write csv/json output to stdout instead of file', false)
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
     .option('--transport <type>', 'Transport protocol: wss (default), grpc', 'wss')
@@ -73,6 +81,17 @@ function collectRepeated(value: string, previous: string[]): string[] {
 }
 
 async function streamAction(options: StreamOptions): Promise<void> {
+  // Resolve credentials early so the wizard can filter by mode
+  const credentials = await resolveCredentials({
+    endpointFlag: options.endpoint,
+    tokenFlag: options.token,
+    modeFlag: options.mode,
+    walletKeyFlag: options.walletKey,
+    x402BaseUrlFlag: options.x402Url,
+    promptOnMissing: true,
+    prompt: promptAdapter,
+  });
+
   // Interactive wizard when running in a TTY with no dataset flag
   if (isInteractive() && !options.dataset) {
     const result = await runStreamWizard({
@@ -83,6 +102,7 @@ async function streamAction(options: StreamOptions): Promise<void> {
       statusesFlag: options.statuses,
       outputFlag: options.output,
       limitFlag: options.limit === '0' ? undefined : options.limit,
+      connectionMode: credentials.mode,
     });
     options.dataset = result.dataset;
     options.transport = result.transport;
@@ -97,7 +117,7 @@ async function streamAction(options: StreamOptions): Promise<void> {
 
   const dataset = await resolveDataset(options.dataset);
   const definition = getDatasetDefinition(dataset);
-  const transport = definition.grpcOnly ? 'grpc' as TransportType : resolveTransport(options.transport);
+  let transport = definition.grpcOnly ? 'grpc' as TransportType : resolveTransport(options.transport);
   const output = resolveOutput(options.output);
   const limit = resolveLimit(options.limit);
   const progressMode = resolveProgressMode(options.progress);
@@ -108,15 +128,29 @@ async function streamAction(options: StreamOptions): Promise<void> {
     throw new Error('--stdout is not supported with --output sqlite (SQLite must write to a file)');
   }
 
-  const credentials = await resolveCredentials({
-    endpointFlag: options.endpoint,
-    tokenFlag: options.token,
-    promptOnMissing: true,
-    prompt: promptAdapter,
-  });
+  // x402 mode does not support gRPC or gRPC-only datasets (blocks)
+  if (credentials.mode === 'x402') {
+    if (definition.grpcOnly) {
+      throw new Error(
+        `The '${dataset}' dataset requires gRPC transport which is not yet supported in x402 mode. ` +
+        'Use a Quicknode endpoint instead, or choose a different dataset.',
+      );
+    }
+    if (transport === 'grpc') {
+      throw new Error(
+        'gRPC transport is not yet supported in x402 mode (requires HTTP/2). ' +
+        'Use --transport wss or a Quicknode endpoint instead.',
+      );
+    }
+  }
 
-  const redact = (message: string): string =>
-    redactSensitiveText(message, { token: credentials.token });
+  const redact = (message: string): string => {
+    let result = redactSensitiveText(message, { token: credentials.token });
+    if (credentials.walletKey) {
+      result = result.replace(new RegExp(credentials.walletKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '****');
+    }
+    return result;
+  };
   const logger = createLogger({
     quiet: options.quiet === true,
     mode: progressMode,
@@ -128,7 +162,8 @@ async function streamAction(options: StreamOptions): Promise<void> {
     redact,
   });
 
-  const urls = deriveEndpointUrls(credentials.endpoint, credentials.token);
+  const conn = await createConnection(credentials, logger);
+  const creditUsageBaseline = await captureX402UsageBaseline(conn, logger);
 
   const filters = buildFilters({
     dataset,
@@ -144,12 +179,13 @@ async function streamAction(options: StreamOptions): Promise<void> {
   } else if (!options.stdout && (output === 'csv' || output === 'json' || output === 'sqlite')) {
     filePath = generateOutputPath('stream', dataset, output, options.tokens);
   }
-  const connectUrl = transport === 'grpc' ? urls.grpcUrl : urls.wsUrl;
+  const transportLabel = transport;
+  const connectUrl = transport === 'grpc' ? conn.grpcUrl : conn.wsUrl;
   const filterSummary = summarizeFilters(filters);
   const bannerLines = [
     `${c.bold('Stream')}`,
     `  dataset    ${c.cyan(dataset)}`,
-    `  transport  ${c.cyan(transport)}`,
+    `  transport  ${c.cyan(transportLabel)}`,
     `  output     ${c.cyan(output)}${filePath ? ` -> ${filePath}` : ''}`,
     `  limit      ${c.cyan(limitLabel)}`,
     `  filters    ${c.cyan(filterSummary)}`,
@@ -166,17 +202,27 @@ async function streamAction(options: StreamOptions): Promise<void> {
   });
   await writer.init({ dataset });
 
-  const createTransport = transport === 'grpc'
-    ? (opts: { onBlock: (block: import('../types/stream').RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
-        new GrpcStreamClient({ grpcUrl: urls.grpcUrl, token: credentials.token, dataset, filters, ...opts })
-    : (opts: { onBlock: (block: import('../types/stream').RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
-        new WsClient({ url: urls.wsUrl, dataset, filters, ...opts });
+  type TransportOpts = { onBlock: (block: import('../types/stream').RawStreamBlock) => Promise<void>; onInfo: (message: string) => void };
+  let createTransport: (opts: TransportOpts) => import('../types/transport').StreamTransport | Promise<import('../types/transport').StreamTransport>;
 
+  if (transport === 'grpc') {
+    // Quicknode mode: native gRPC
+    createTransport = (opts: TransportOpts) =>
+      new GrpcStreamClient({ grpcUrl: conn.grpcUrl, token: conn.token!, dataset, filters, ...opts });
+  } else {
+    // WSS for both modes
+    createTransport = async (opts: TransportOpts) => {
+      const currentWsUrl = conn.refreshWsUrl ? await conn.refreshWsUrl() : conn.wsUrl;
+      return new WsClient({ url: currentWsUrl, dataset, filters, ...opts });
+    };
+  }
+
+  const creditChecker = startPeriodicCreditCheck(conn, logger);
   try {
     await runStreamRuntime({
       dataset,
       createTransport,
-      httpUrl: urls.httpUrl,
+      httpUrl: conn.httpUrl,
       filters,
       normalize: getNormalizer(dataset),
       onEvent: async (event) => {
@@ -186,8 +232,11 @@ async function streamAction(options: StreamOptions): Promise<void> {
       limit,
       log: (message) => logger.info(message),
       warn: (message) => logger.warn(message),
+      httpFetchFn: conn.fetchFn,
+      ensureCredits: conn.ensureCredits,
     });
   } finally {
+    creditChecker?.stop();
     await writer.flush();
     await writer.close();
     const runtimeSeconds = Math.max((Date.now() - startedAt) / 1000, 0.001);
@@ -198,6 +247,8 @@ async function streamAction(options: StreamOptions): Promise<void> {
     if (filePath) {
       logger.info(`Output written to: ${filePath}`);
     }
+    await logX402UsageSummary(conn, creditUsageBaseline, logger);
+    conn.cleanup?.();
   }
 }
 

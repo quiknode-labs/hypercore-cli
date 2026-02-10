@@ -23,10 +23,12 @@ interface BatchBlocksResult {
 
 export class JsonRpcClient implements StreamProcessorBlockFetcher {
   private readonly url: string;
+  private readonly fetchFn: typeof fetch;
   private idCounter = 1;
 
-  constructor(url: string) {
+  constructor(url: string, fetchFn?: typeof fetch) {
     this.url = url;
+    this.fetchFn = fetchFn ?? fetch;
   }
 
   async fetchBatchBlocks(dataset: DatasetName, from: number, to: number): Promise<RawStreamBlock[]> {
@@ -58,7 +60,7 @@ export class JsonRpcClient implements StreamProcessorBlockFetcher {
       id: this.idCounter++,
     };
 
-    const response = await fetch(this.url, {
+    const response = await this.fetchFn(this.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

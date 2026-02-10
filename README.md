@@ -1,6 +1,6 @@
 # @quicknode/hypercore-cli
 
-> **Note for reviewers**: While reviewing this CLI tool locally, check the [Local Development Setup](#local-development-setup) section for instructions on how to build, run, and test the CLI. Use `node dist/src/index.js` to run the built CLI from the command line, instead of `hypercore-cli`, as the package is not published to npm yet. 
+> **Note for reviewers**: While reviewing this CLI tool locally, check the [Local Development Setup](#local-development-setup) section for instructions on how to build, run, and test the CLI. Use `node dist/src/index.js` to run the built CLI from the command line, instead of `hypercore-cli`, as the package is not published to npm yet.
 For example: `node dist/src/index.js stream --dataset trades --tokens BTC,ETH --limit 20`
 
 Stream, backfill, and analyze [Hyperliquid L1](https://hyperliquid.gitbook.io/hyperliquid-docs/) data from the terminal — powered by [Quicknode HyperCore](https://www.quicknode.com/docs/hyperliquid/datasets).
@@ -34,6 +34,7 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 | **4 output formats** | Pretty console, JSON lines, CSV, and SQLite persistence |
 | **Server-side filtering** | Filter by coin, user address, or order status before data leaves the server |
 | **Automation-ready** | `--progress json` emits machine-readable telemetry to stderr for scripts and pipelines |
+| **x402 micropayments** | Pay per request with USDC — no Quicknode account needed (WSS only; `blocks` dataset and gRPC require Quicknode Direct) |
 | **Secure credential handling** | OS keychain storage, 4-tier credential resolution, full token redaction in logs |
 | **Interactive wizards** | Stream and backfill can run with step-by-step prompts for dataset selection, filters, output format, limits, and block ranges |
 
@@ -44,9 +45,11 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 ### Prerequisites
 
 - **Node.js** >= 20 (22 recommended)
-- A **Quicknode account** with a Hyperliquid endpoint ([sign up](https://www.quicknode.com/signup))
+- **One of:**
+  - A **Quicknode account** with a Hyperliquid endpoint ([sign up](https://www.quicknode.com/signup)), OR
+  - An **EVM wallet** with USDC on Base Sepolia or Base Mainnet for x402 micropayments (no account needed)
 
-> **Pricing:** HyperCore usage is billed through your Quicknode plan. See [Quicknode HyperCore pricing](https://www.quicknode.com/docs/hyperliquid/pricing) for details.
+> **Pricing:** HyperCore usage is billed through your Quicknode plan or via x402 micropayments. See [Quicknode HyperCore pricing](https://www.quicknode.com/docs/hyperliquid/pricing) for details.
 
 ### Step 1 — Install
 
@@ -60,7 +63,11 @@ npx @quicknode/hypercore-cli --help
 npm install -g @quicknode/hypercore-cli
 ```
 
-### Step 2 — Get your Quicknode Hyperliquid endpoint
+### Step 2 — Choose your connection mode
+
+The CLI supports two connection modes. Pick the one that fits your setup:
+
+#### Option A: Quicknode Direct (traditional)
 
 1. Log in to your [Quicknode dashboard](https://dashboard.quicknode.com/).
 2. Create or select a **Hyperliquid** endpoint.
@@ -68,21 +75,52 @@ npm install -g @quicknode/hypercore-cli
    ```
    wss://YOUR-ENDPOINT.hype-mainnet.quiknode.pro/YOUR-TOKEN/hypercore/ws
    ```
-
-### Step 3 — Configure credentials
-
-```bash
-hypercore-cli config
-```
-
-The interactive prompt will ask for your WSS endpoint. The CLI auto-extracts the token from the URL path and derives the gRPC endpoint automatically — no need to split or configure them separately.
+4. Run the interactive config:
+   ```bash
+   hypercore-cli config
+   ```
+   Select **Quicknode Direct**, then choose **WSS** or **gRPC** transport. The CLI auto-extracts the token from the URL path and derives the gRPC endpoint automatically — no need to split or configure them separately.
 
 > Credentials are stored securely: the endpoint goes to `~/.hypercore-cli/config.json` and the token is saved to your OS keychain (or a local file with `0600` permissions if the keychain is unavailable).
 
-### Step 4 — Stream your first data
+#### Option B: x402 Micropayments (no account needed)
+
+Pay per request with USDC on Base Sepolia — no Quicknode account required. You just need an EVM wallet private key with USDC balance.
+
+> **Limitation:** x402 currently supports WSS transport only. The `blocks` dataset and gRPC transport are not available in x402 mode — use Quicknode Direct for those.
+
+1. Run the interactive config and select **x402 Micropayments**:
+   ```bash
+   hypercore-cli config
+   ```
+   You will be prompted for:
+   - Wallet private key (required) (starts with `0x`, will be hidden as you type)
+   - Payment chain (`base-sepolia` default; press Enter to keep default)
+   - x402 proxy URL (default prefilled; press Enter to keep default)
+   After saving, the CLI prints where the wallet key was stored (system keychain, or `~/.hypercore-cli/wallet-key` with `0600` permissions).
+2. Or skip interactive setup and run with env vars + x402 mode:
+   ```bash
+   export X402_WALLET_KEY=0x...   # your private key — never paste in plain text in shared commands
+   hypercore-cli stream --dataset trades --limit 10 --mode x402
+   ```
+   See [x402 Micropayments](#x402-micropayments) below for full details.
+
+The CLI authenticates via [SIWE](https://eips.ethereum.org/EIPS/eip-4361), automatically handles x402 payment negotiation, and manages credit lifecycle — all transparent to you.
+
+> If you need testnet USDC on Base Sepolia, check the [Getting testnet USDC (Base Sepolia)](#getting-testnet-usdc-base-sepolia) section.
+
+### Step 3 — Stream your first data
 
 ```bash
+# Quicknode Direct (WSS or gRPC — based on saved config)
 hypercore-cli stream --dataset trades --tokens BTC,ETH --limit 20
+
+# Quicknode Direct with explicit gRPC transport
+hypercore-cli stream --dataset trades --tokens BTC,ETH --limit 20 --transport grpc
+
+# x402 Micropayments (wallet key from env or saved config)
+export X402_WALLET_KEY=0x...
+hypercore-cli stream --dataset trades --tokens BTC,ETH --limit 20 --mode x402
 ```
 
 You should see real-time Hyperliquid trades printed to your terminal. That's it — you're connected.
@@ -100,22 +138,54 @@ hypercore-cli stats --help
 hypercore-cli query --help
 hypercore-cli sample --help
 hypercore-cli config --help
+hypercore-cli credits --help
 ```
 
 ### `config` — Credential management
 
 ```bash
-hypercore-cli config          # Interactive setup
-hypercore-cli config --show   # View saved config (token masked, endpoint redacted)
+hypercore-cli config          # Interactive setup (choose Quicknode Direct or x402, then WSS or gRPC)
+hypercore-cli config --show   # View saved config (secrets masked)
 hypercore-cli config --clear  # Remove all saved credentials
 ```
 
-Credentials can also be provided via CLI flags (`--endpoint`, `--token`) or environment variables (`QUICKNODE_ENDPOINT`, `QUICKNODE_TOKEN`). Resolution order:
+Credentials can also be provided via CLI flags or environment variables. Resolution order:
 
 1. CLI flags (highest priority)
 2. Environment variables
 3. Saved config/keychain
 4. Interactive prompt (fallback)
+
+**Quicknode Direct** flags and env vars:
+
+| Flag | Env var | Description |
+|---|---|---|
+| `--endpoint` | `QUICKNODE_ENDPOINT` | Quicknode WSS URL |
+| `--token` | `QUICKNODE_TOKEN` | Quicknode auth token |
+
+**x402 Micropayments** flags and env vars:
+
+| Flag | Env var | Description |
+|---|---|---|
+| `--mode x402` | `X402_MODE=x402` | Enable x402 mode |
+| `--wallet-key` | `X402_WALLET_KEY` | EVM wallet private key (prefer env var or saved config) |
+| `--x402-url` | `X402_BASE_URL` | x402 proxy URL override |
+
+> **Security tip:** Avoid passing `--wallet-key` directly on the command line — it may be visible in shell history and process listings. Use the `X402_WALLET_KEY` environment variable or save it via `hypercore-cli config` instead.
+
+**Auto-detection:** If only a wallet key is configured, the CLI defaults to x402 mode. If only a Quicknode endpoint is configured, it defaults to Quicknode Direct. Use `--mode` to override.
+
+If both Quicknode and x402 credentials are present, interactive runs prompt you to choose `quicknode` or `x402` (unless mode is explicitly set via `--mode` or `X402_MODE`).
+
+### `credits` — Check x402 credit balance
+
+Check x402 credits without triggering a paid request:
+
+```bash
+hypercore-cli credits
+hypercore-cli credits --json
+hypercore-cli credits --wallet-key 0x... --x402-url https://x402.quiknode-cf.pro
+```
 
 ### `sample` — Explore datasets before ingestion
 
@@ -162,8 +232,6 @@ hypercore-cli stream
   csv     - CSV format
   sqlite  - Save to SQLite database
 ? Event limit (number, or 0 for unlimited): 50
-
-🚀 Streaming orders for BTC, ETH...
 ```
 
 The wizard detects when you are in a terminal (TTY) and walks through dataset selection, transport, filters, output format, and event limit step by step. Any flag you provide on the command line skips the corresponding wizard step. If you select a gRPC-only dataset (e.g. `blocks`), the transport step is automatically set to gRPC.
@@ -186,8 +254,8 @@ hypercore-cli stream --dataset trades --tokens BTC,ETH --users 0x123,0x456
 # Filter orders by status (orders dataset only)
 hypercore-cli stream --dataset orders --statuses open,filled
 
-# JSON output to auto-generated file, capped at 50 events
-hypercore-cli stream --dataset book_updates --output json --limit 50
+# JSON output to auto-generated file, capped at 50 events, with x402 payments
+hypercore-cli stream --dataset book_updates --output json --limit 50 --mode x402
 
 # Force JSON output to stdout instead of file
 hypercore-cli stream --dataset trades --output json --limit 10 --stdout
@@ -212,6 +280,9 @@ hypercore-cli stream --dataset trades --output sqlite --path ./trades.db --limit
 | `--limit` | Stop after N events (0 = unlimited) | `0` |
 | `--path` | Override auto-generated output file path (csv, json, sqlite) | _(auto-generated)_ |
 | `--stdout` | Write csv/json to stdout instead of auto-generated file | `false` |
+| `--mode` | Connection mode: `quicknode`, `x402` | _(auto-detected)_ |
+| `--wallet-key` | Wallet private key for x402 payments | _(none)_ |
+| `--x402-url` | x402 proxy base URL override | _(default proxy)_ |
 
 If the connection drops, the CLI automatically reconnects with exponential backoff and backfills any missed blocks via JSON-RPC — no manual intervention needed.
 
@@ -256,9 +327,9 @@ The wizard runs in a terminal (TTY) when `--dataset`, `--from`, or `--to` is mis
 # Export a block range as JSON (auto-generates output file)
 hypercore-cli backfill --dataset orders --from 887643588 --to 887643688 --output json
 
-# Filter and export to CSV
+# Filter and export to CSV with x402 payments
 hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
-  --tokens BTC,ETH --output csv
+  --tokens BTC,ETH --output csv --mode x402
 
 # Force output to stdout for piping
 hypercore-cli backfill --dataset trades --from 887643588 --to 887643688 \
@@ -283,11 +354,14 @@ hypercore-cli backfill --dataset writer_actions --from 887643588 --to 887643688 
 |---|---|---|
 | `--from` | Start block number (inclusive) | _(prompted in TTY; required otherwise)_ |
 | `--to` | End block number (inclusive) | _(prompted in TTY; required otherwise)_ |
-| `--batch-size` | JSON-RPC batch size (1–200) | `100` |
+| `--batch-size` | JSON-RPC batch size (1-200) | `100` |
 | `--output` | Output format: `console`, `json`, `csv`, `sqlite` | `console` |
 | `--path` | Override auto-generated output file path (csv, json, sqlite) | _(auto-generated)_ |
 | `--stdout` | Write csv/json to stdout instead of auto-generated file | `false` |
 | `--progress` | Progress output mode: `text`, `json` | `text` |
+| `--mode` | Connection mode: `quicknode`, `x402` | _(auto-detected)_ |
+| `--wallet-key` | Wallet private key for x402 payments | _(none)_ |
+| `--x402-url` | x402 proxy base URL override | _(default proxy)_ |
 
 ### `stats` — Live stream statistics
 
@@ -308,6 +382,9 @@ hypercore-cli stats --dataset writer_actions --progress json --interval 2
 | `--interval` | Snapshot print interval in seconds | `5` |
 | `--limit` | Stop after N events (0 = unlimited) | `0` |
 | `--progress` | Progress output mode: `text`, `json` | `text` |
+| `--mode` | Connection mode: `quicknode`, `x402` | _(auto-detected)_ |
+| `--wallet-key` | Wallet private key for x402 payments | _(none)_ |
+| `--x402-url` | x402 proxy base URL override | _(default proxy)_ |
 
 ### `query` — SQL against collected data
 
@@ -372,21 +449,22 @@ hypercore-cli stream --dataset trades --output json --stdout | jq .coin
 
 ## Datasets
 
-| Dataset | Description | Stream | Backfill | Volume | Docs |
-|---|---|---|---|---|---|
-| `orders` | Order lifecycle — open, filled, canceled, rejected | WSS, gRPC | Yes | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/orders) |
-| `trades` | Executed fills with price, size, and fee details | WSS, gRPC | Yes | High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/trades) |
-| `events` | System events — liquidations, funding, settlements | WSS, gRPC | Yes | Medium | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/events) |
-| `book_updates` | Level 2 order book changes (bids/asks) | WSS, gRPC | Yes | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/book-updates) |
-| `twap` | TWAP order execution tracking | WSS, gRPC | Yes | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/twap) |
-| `writer_actions` | HyperCore-to-HyperEVM bridge transfers | WSS, gRPC | Yes | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/writer-actions) |
-| `blocks` | Raw block data — all L1 transactions and responses | gRPC only | No | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/blocks) |
+| Dataset | Description | Stream | Backfill | x402 | Volume | Docs |
+|---|---|---|---|---|---|---|
+| `orders` | Order lifecycle — open, filled, canceled, rejected | WSS, gRPC | Yes | WSS only | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/orders) |
+| `trades` | Executed fills with price, size, and fee details | WSS, gRPC | Yes | WSS only | High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/trades) |
+| `events` | System events — liquidations, funding, settlements | WSS, gRPC | Yes | WSS only | Medium | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/events) |
+| `book_updates` | Level 2 order book changes (bids/asks) | WSS, gRPC | Yes | WSS only | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/book-updates) |
+| `twap` | TWAP order execution tracking | WSS, gRPC | Yes | WSS only | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/twap) |
+| `writer_actions` | HyperCore-to-HyperEVM bridge transfers | WSS, gRPC | Yes | WSS only | Low | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/writer-actions) |
+| `blocks` | Raw block data — all L1 transactions and responses | gRPC only | No | Not supported | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/blocks) |
 
 Browse all datasets interactively:
 
 ```bash
 hypercore-cli sample --list
 hypercore-cli sample --dataset trades
+hypercore-cli sample --dataset blocks
 ```
 
 ---
@@ -468,6 +546,91 @@ hypercore-cli sample --dataset writer_actions
 
 ---
 
+## Connection Modes
+
+### Quicknode Direct
+
+The default mode. Connects directly to your Quicknode Hyperliquid endpoint using your API token. Supports all datasets (including `blocks`), both WSS and gRPC transports, and historical backfill. Best for production workloads with a Quicknode plan.
+
+```bash
+# Via saved config
+hypercore-cli stream --dataset trades --limit 20
+
+# Via flags
+hypercore-cli stream --dataset trades --limit 20 \
+  --endpoint wss://your-endpoint.hype-mainnet.quiknode.pro/your-token/hypercore/ws
+
+# Via environment variables
+export QUICKNODE_ENDPOINT="wss://your-endpoint.hype-mainnet.quiknode.pro/your-token/hypercore/ws"
+hypercore-cli stream --dataset trades --limit 20
+
+# With gRPC transport
+hypercore-cli stream --dataset trades --limit 20 --transport grpc
+```
+
+### x402 Micropayments
+
+Pay per request with USDC — no Quicknode account needed. The CLI authenticates with [SIWE](https://eips.ethereum.org/EIPS/eip-4361) (Sign-In with Ethereum), then uses the [x402 payment protocol](https://www.x402.org/) to automatically pay for API access with USDC.
+
+#### Current limitations
+
+| Feature | x402 support |
+|---|---|
+| WSS transport | Supported |
+| gRPC transport | Not yet supported |
+| `blocks` dataset | Not yet supported |
+| Historical backfill | Supported |
+| All other datasets | Supported |
+
+Use **Quicknode Direct** if you need gRPC transport or the `blocks` dataset.
+
+#### Supported payment chains
+
+| Chain | Config value | USDC contract | Use case |
+|---|---|---|---|
+| **Base Sepolia** (default) | `base-sepolia` | Testnet USDC | Development and testing |
+| **Base Mainnet** | `base` | Real USDC | Production |
+
+The payment chain is configured during `hypercore-cli config` setup. The default is `base-sepolia` (testnet).
+
+#### Getting testnet USDC (Base Sepolia)
+
+To use x402 on Base Sepolia, your wallet needs testnet USDC. You can get it from these faucet(s):
+
+- [Circle USDC Faucet](https://faucet.circle.com/) — Testnet USDC on Base Sepolia
+
+#### Usage
+
+```bash
+# Set wallet key once per session (avoid pasting keys in command arguments)
+export X402_WALLET_KEY=0x...
+
+# Stream with x402
+hypercore-cli stream --dataset trades --limit 20 --mode x402
+
+# Backfill with x402
+hypercore-cli backfill --dataset trades --from 0 --to 5 --mode x402
+
+# Check credits without making a paid request
+hypercore-cli credits
+
+# Save x402 credentials for reuse (no env var needed after this)
+hypercore-cli config   # select "x402 Micropayments" and enter your wallet key
+hypercore-cli stream --dataset trades --limit 20   # auto-detects x402 mode
+```
+
+#### How it works
+
+1. **Authenticate** — the CLI signs a SIWE message with your wallet and exchanges it for a JWT
+2. **Check credits** — queries your credit balance on the x402 proxy
+3. **Auto-pay** — if credits are zero, the CLI makes a paid HTTP request that triggers an on-chain USDC transfer and credits your account
+4. **Stream/backfill** — WebSocket and JSON-RPC requests use the JWT for auth; credits are deducted per request
+5. **Auto-refresh** — JWTs and credits are refreshed automatically as needed
+
+> **Wallet key security:** When saved via `hypercore-cli config`, the wallet private key is stored in your OS keychain (or a local file with `0600` permissions if the keychain is unavailable). It is never logged — all sensitive values are redacted in output.
+
+---
+
 ## Troubleshooting
 
 ### Missing Quicknode credentials
@@ -491,7 +654,10 @@ hypercore-cli stream --endpoint wss://... --token your-token --dataset trades
 
 ### Keychain unavailable
 
-If your environment doesn't support a system keychain (headless servers, containers), the CLI automatically falls back to storing the token in `~/.hypercore-cli/token` with `0600` permissions. No action needed.
+If your environment doesn't support a system keychain (headless servers, containers), the CLI automatically falls back to local files with `0600` permissions:
+
+- Quicknode token: `~/.hypercore-cli/token`
+- x402 wallet key: `~/.hypercore-cli/wallet-key`
 
 ### `better-sqlite3` native binding errors
 
@@ -507,6 +673,22 @@ pnpm rebuild better-sqlite3 keytar
 ```
 
 Use **Node 22** for best compatibility.
+
+### x402 authentication failed
+
+```
+Error: x402 auth failed (HTTP 401): ...
+```
+
+Your SIWE signature was rejected. Ensure your wallet private key is valid and starts with `0x`.
+
+### x402 insufficient USDC balance
+
+```
+Error: Failed to acquire x402 credits after payment
+```
+
+Your wallet needs USDC on Base Sepolia to pay for API access. Fund your wallet address (shown in the auth log line) with testnet USDC.
 
 ### Block range out of history
 
@@ -576,10 +758,12 @@ pnpm pack:dry-run   # Verify tarball contents before publish
 
 ## Architecture
 
-The CLI supports **dual transport** — WebSocket (default) and gRPC — for real-time streaming, with **JSON-RPC** for historical backfill. Key architectural choices:
+The CLI supports **dual transport** — WebSocket (default) and gRPC — for real-time streaming, with **JSON-RPC** for historical backfill. It also supports **dual connection mode** — Quicknode Direct (traditional API token) and x402 micropayments (USDC-based pay-per-request). Key architectural choices:
 
 - **Pluggable transport layer** — `stream` and `stats` accept `--transport wss` or `--transport grpc`; gRPC-only datasets (like `blocks`) auto-select gRPC
+- **Pluggable connection mode** — `--mode quicknode` or `--mode x402` with automatic detection based on available credentials; x402 currently supports WSS only
 - **Auto-reconnect with gap recovery** — on disconnect, the CLI backfills missed blocks via `hl_getBatchBlocks` before resuming the live stream
+- **x402 credit lifecycle** — automatic SIWE authentication, credit checking, on-chain payment, and JWT refresh
 - **Shared stream runtime** — `stream` and `stats` share the same reconnect/backfill pipeline, so reliability improvements apply everywhere
 - **Central dataset registry** — adding a new dataset is mechanical: register it, write a normalizer, and all commands + outputs work automatically
 - **Bounded dedupe memory** — long-running streams won't leak memory; dedupe keys are pruned by block retention window
@@ -590,6 +774,8 @@ The CLI supports **dual transport** — WebSocket (default) and gRPC — for rea
 
 - [x] gRPC transport integration (higher throughput, binary Protobuf encoding)
 - [x] `blocks` dataset support (raw L1 transactions, gRPC-only)
+- [x] x402 micropayment support (pay-per-request with USDC)
+- [ ] x402 gRPC + `blocks` support
 
 ---
 

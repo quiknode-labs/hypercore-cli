@@ -15,7 +15,9 @@ import { isInteractive, selectPrompt } from '../utils/interactive';
 import { createLogger } from '../utils/logger';
 import { promptAdapter } from '../utils/prompt';
 import { resolveProgressMode } from '../utils/progress';
-import { deriveEndpointUrls, QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { QUICKNODE_WSS_EXAMPLE, redactSensitiveText } from '../utils/url';
+import { createConnection } from '../x402/connection';
+import { captureX402UsageBaseline, logX402UsageSummary, startPeriodicCreditCheck } from '../x402/usage';
 
 const DATASETS = getDatasetNames();
 
@@ -32,6 +34,9 @@ interface StatsOptions {
   quiet?: boolean;
   progress?: string;
   transport?: string;
+  mode?: string;
+  walletKey?: string;
+  x402Url?: string;
 }
 
 interface StatsSnapshot {
@@ -186,6 +191,9 @@ export function registerStatsCommand(program: Command): void {
       `Quicknode endpoint override (host or full WSS URL, e.g. ${QUICKNODE_WSS_EXAMPLE})`,
     )
     .option('--token <token>', 'Quicknode token override')
+    .option('--mode <mode>', 'Connection mode: quicknode, x402')
+    .option('--wallet-key <key>', 'Wallet private key for x402 payments')
+    .option('--x402-url <url>', 'x402 proxy base URL override')
     .option('--filter <kv>', 'Additional filter in key=v1,v2 format', collectRepeated, [])
     .option('--transport <type>', 'Transport protocol: wss (default), grpc', 'wss')
     .action(async (options: StatsOptions) => {
@@ -198,21 +206,46 @@ function collectRepeated(value: string, previous: string[]): string[] {
 }
 
 async function statsAction(options: StatsOptions): Promise<void> {
-  const dataset = await resolveDataset(options.dataset);
-  const transport = await resolveTransportInteractive(options.transport, dataset);
-  const limit = resolveLimit(options.limit);
-  const intervalSeconds = resolveIntervalSeconds(options.interval);
-  const progressMode = resolveProgressMode(options.progress);
-
   const credentials = await resolveCredentials({
     endpointFlag: options.endpoint,
     tokenFlag: options.token,
+    modeFlag: options.mode,
+    walletKeyFlag: options.walletKey,
+    x402BaseUrlFlag: options.x402Url,
     promptOnMissing: true,
     prompt: promptAdapter,
   });
 
-  const redact = (message: string): string =>
-    redactSensitiveText(message, { token: credentials.token });
+  const dataset = await resolveDataset(options.dataset);
+  const definition = getDatasetDefinition(dataset);
+  let transport = await resolveTransportInteractive(options.transport, dataset, credentials.mode);
+  const limit = resolveLimit(options.limit);
+  const intervalSeconds = resolveIntervalSeconds(options.interval);
+  const progressMode = resolveProgressMode(options.progress);
+
+  // x402 mode does not support gRPC or gRPC-only datasets (blocks)
+  if (credentials.mode === 'x402') {
+    if (definition.grpcOnly) {
+      throw new Error(
+        `The '${dataset}' dataset requires gRPC transport which is not yet supported in x402 mode. ` +
+        'Use a Quicknode endpoint instead, or choose a different dataset.',
+      );
+    }
+    if (transport === 'grpc') {
+      throw new Error(
+        'gRPC transport is not yet supported in x402 mode (requires HTTP/2). ' +
+        'Use --transport wss or a Quicknode endpoint instead.',
+      );
+    }
+  }
+
+  const redact = (message: string): string => {
+    let result = redactSensitiveText(message, { token: credentials.token });
+    if (credentials.walletKey) {
+      result = result.replace(new RegExp(credentials.walletKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '****');
+    }
+    return result;
+  };
   const logger = createLogger({
     quiet: options.quiet === true,
     mode: progressMode,
@@ -224,7 +257,8 @@ async function statsAction(options: StatsOptions): Promise<void> {
     redact,
   });
 
-  const urls = deriveEndpointUrls(credentials.endpoint, credentials.token);
+  const conn = await createConnection(credentials, logger);
+  const creditUsageBaseline = await captureX402UsageBaseline(conn, logger);
 
   const filters = buildFilters({
     dataset,
@@ -234,25 +268,34 @@ async function statsAction(options: StatsOptions): Promise<void> {
     rawFilters: options.filter,
   });
   const limitLabel = limit > 0 ? String(limit) : 'unlimited';
-  const connectUrl = transport === 'grpc' ? urls.grpcUrl : urls.wsUrl;
-  logger.info(`Connecting to ${connectUrl} (transport=${transport}, dataset=${dataset}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
+  const transportLabel = transport;
+  const connectUrl = transport === 'grpc' ? conn.grpcUrl : conn.wsUrl;
+  logger.info(`Connecting to ${connectUrl} (transport=${transportLabel}, dataset=${dataset}, limit=${limitLabel}, ${summarizeFilters(filters)})`);
 
   const stats = new LiveStats(dataset);
   const timer = setInterval(() => {
     writeSnapshot(stats, progressMode);
   }, intervalSeconds * 1000);
 
-  const createTransport = transport === 'grpc'
-    ? (opts: { onBlock: (block: RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
-        new GrpcStreamClient({ grpcUrl: urls.grpcUrl, token: credentials.token, dataset, filters, ...opts })
-    : (opts: { onBlock: (block: RawStreamBlock) => Promise<void>; onInfo: (message: string) => void }) =>
-        new WsClient({ url: urls.wsUrl, dataset, filters, ...opts });
+  type TransportOpts = { onBlock: (block: RawStreamBlock) => Promise<void>; onInfo: (message: string) => void };
+  let createTransport: (opts: TransportOpts) => import('../types/transport').StreamTransport | Promise<import('../types/transport').StreamTransport>;
 
+  if (transport === 'grpc') {
+    createTransport = (opts: TransportOpts) =>
+      new GrpcStreamClient({ grpcUrl: conn.grpcUrl, token: conn.token!, dataset, filters, ...opts });
+  } else {
+    createTransport = async (opts: TransportOpts) => {
+      const currentWsUrl = conn.refreshWsUrl ? await conn.refreshWsUrl() : conn.wsUrl;
+      return new WsClient({ url: currentWsUrl, dataset, filters, ...opts });
+    };
+  }
+
+  const creditChecker = startPeriodicCreditCheck(conn, logger);
   try {
     await runStreamRuntime({
       dataset,
       createTransport,
-      httpUrl: urls.httpUrl,
+      httpUrl: conn.httpUrl,
       filters,
       normalize: getNormalizer(dataset),
       onEvent: async (event) => {
@@ -262,13 +305,18 @@ async function statsAction(options: StatsOptions): Promise<void> {
       log: (message) => logger.info(message),
       warn: (message) => logger.warn(message),
       idleLogIntervalMs: 15_000,
+      httpFetchFn: conn.fetchFn,
+      ensureCredits: conn.ensureCredits,
     });
   } finally {
+    creditChecker?.stop();
     clearInterval(timer);
     const finalSnapshot = writeSnapshot(stats, progressMode);
     logger.info(
       `Stats complete: ${formatNumber(finalSnapshot.total)} events in ${finalSnapshot.runtimeSeconds.toFixed(3)}s (${finalSnapshot.eventsPerSecondAvg.toFixed(2)} eps)`,
     );
+    await logX402UsageSummary(conn, creditUsageBaseline, logger);
+    conn.cleanup?.();
   }
 }
 
@@ -423,8 +471,14 @@ function primaryBucketLabel(dataset: DatasetName): string {
 
 const VALID_TRANSPORTS: TransportType[] = ['wss', 'grpc'];
 
-async function resolveTransportInteractive(input: string | undefined, dataset: DatasetName): Promise<TransportType> {
+async function resolveTransportInteractive(input: string | undefined, dataset: DatasetName, mode?: string): Promise<TransportType> {
   const definition = getDatasetDefinition(dataset);
+  const isX402 = mode === 'x402';
+
+  // x402 mode only supports WSS
+  if (isX402) {
+    return 'wss';
+  }
 
   // Explicit flag always wins
   if (input && input !== 'wss') {

@@ -4,6 +4,10 @@ import { homedir } from 'node:os';
 
 export interface SavedConfig {
   endpoint?: string;
+  mode?: 'quicknode' | 'x402';
+  x402BaseUrl?: string;
+  x402Network?: string;
+  x402Chain?: 'base-sepolia' | 'base';
 }
 
 const CONFIG_DIR = path.join(homedir(), '.hypercore-cli');

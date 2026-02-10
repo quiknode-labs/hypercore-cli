@@ -2,6 +2,7 @@ import { JsonRpcClient } from '../api/jsonrpc';
 import type { FilterMap } from '../filters/filter-builder';
 import { getReconnectDelaySeconds } from './reconnection-manager';
 import { StreamProcessor } from './stream-processor';
+import { X402CreditExhaustedError } from './ws-client';
 import type { DatasetName } from '../types/common';
 import type { NormalizedEvent, RawStreamBlock } from '../types/stream';
 import type { StreamTransport } from '../types/transport';
@@ -11,7 +12,7 @@ export interface StreamRuntimeOptions {
   createTransport: (opts: {
     onBlock: (block: RawStreamBlock) => Promise<void>;
     onInfo: (message: string) => void;
-  }) => StreamTransport;
+  }) => StreamTransport | Promise<StreamTransport>;
   httpUrl: string;
   filters: FilterMap;
   normalize: (block: RawStreamBlock) => NormalizedEvent[];
@@ -20,6 +21,8 @@ export interface StreamRuntimeOptions {
   log: (message: string) => void;
   warn: (message: string) => void;
   idleLogIntervalMs?: number;
+  httpFetchFn?: typeof fetch;
+  ensureCredits?: () => Promise<void>;
 }
 
 export interface StreamRuntimeResult {
@@ -32,7 +35,7 @@ export async function runStreamRuntime(options: StreamRuntimeOptions): Promise<S
   let emittedCount = 0;
   let lastEventTime = Date.now();
 
-  const jsonRpcClient = new JsonRpcClient(options.httpUrl);
+  const jsonRpcClient = new JsonRpcClient(options.httpUrl, options.httpFetchFn);
   const processor = new StreamProcessor({
     dataset: options.dataset,
     blockFetcher: jsonRpcClient,
@@ -54,6 +57,8 @@ export async function runStreamRuntime(options: StreamRuntimeOptions): Promise<S
   });
 
   let reconnectAttempt = 0;
+  let consecutivePaymentAttempts = 0;
+  const MAX_PAYMENT_RETRIES = 3;
   const shutdownHandler = (): void => {
     options.log('Received shutdown signal, stopping stream...');
     abortController.abort();
@@ -77,7 +82,7 @@ export async function runStreamRuntime(options: StreamRuntimeOptions): Promise<S
     while (!abortController.signal.aborted) {
       let blockProcessingChain: Promise<void> = Promise.resolve();
 
-      const transport = options.createTransport({
+      const transport = await options.createTransport({
         onBlock: async (block) => {
           blockProcessingChain = blockProcessingChain.then(async () => {
             if (stopRequested || abortController.signal.aborted) {
@@ -101,11 +106,29 @@ export async function runStreamRuntime(options: StreamRuntimeOptions): Promise<S
       try {
         const result = await transport.connectAndRun(abortController.signal);
         await blockProcessingChain;
+        consecutivePaymentAttempts = 0;
         if (result === 'aborted') {
           break;
         }
         reconnectAttempt += 1;
       } catch (error) {
+        const isPaymentRequired =
+          (error instanceof X402CreditExhaustedError) ||
+          (error instanceof Error && /Unexpected server response: 402/.test(error.message));
+
+        if (isPaymentRequired && options.ensureCredits && consecutivePaymentAttempts < MAX_PAYMENT_RETRIES) {
+          consecutivePaymentAttempts += 1;
+          options.log(`x402 payment required, acquiring credits (attempt ${consecutivePaymentAttempts}/${MAX_PAYMENT_RETRIES})...`);
+          try {
+            await options.ensureCredits();
+            options.log('x402 credits acquired, reconnecting...');
+            reconnectAttempt = 0;
+            continue;
+          } catch (paymentError) {
+            const paymentMsg = paymentError instanceof Error ? paymentError.message : String(paymentError);
+            options.warn(`x402 credit acquisition failed: ${paymentMsg}`);
+          }
+        }
         reconnectAttempt += 1;
         const message = error instanceof Error ? error.message : String(error);
         options.warn(`Stream connection dropped: ${message}`);
