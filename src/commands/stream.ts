@@ -81,6 +81,12 @@ function collectRepeated(value: string, previous: string[]): string[] {
 }
 
 async function streamAction(options: StreamOptions): Promise<void> {
+  // Validate flags that don't depend on credentials before credential resolution
+  const progressMode = resolveProgressMode(options.progress);
+  if (options.output === 'sqlite' && options.stdout) {
+    throw new Error('--stdout is not supported with --output sqlite (SQLite must write to a file)');
+  }
+
   // Resolve credentials early so the wizard can filter by mode
   const credentials = await resolveCredentials({
     endpointFlag: options.endpoint,
@@ -120,13 +126,8 @@ async function streamAction(options: StreamOptions): Promise<void> {
   let transport = definition.grpcOnly ? 'grpc' as TransportType : resolveTransport(options.transport);
   const output = resolveOutput(options.output);
   const limit = resolveLimit(options.limit);
-  const progressMode = resolveProgressMode(options.progress);
   const startedAt = Date.now();
   let emittedCount = 0;
-
-  if (output === 'sqlite' && options.stdout) {
-    throw new Error('--stdout is not supported with --output sqlite (SQLite must write to a file)');
-  }
 
   // x402 mode does not support gRPC or gRPC-only datasets (blocks)
   if (credentials.mode === 'x402') {
