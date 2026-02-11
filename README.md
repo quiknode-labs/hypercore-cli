@@ -34,7 +34,7 @@ No boilerplate. No custom ingestion code. Just real-time Hyperliquid data.
 | **4 output formats** | Pretty console, JSON lines, CSV, and SQLite persistence |
 | **Server-side filtering** | Filter by coin, user address, or order status before data leaves the server |
 | **Automation-ready** | `--progress json` emits machine-readable telemetry to stderr for scripts and pipelines |
-| **x402 micropayments** | Pay per request with USDC — no Quicknode account needed (WSS only; `blocks` dataset and gRPC require Quicknode Direct) |
+| **x402 micropayments** | Pay per request with USDC — no Quicknode account needed. `backfill` is supported for all backfillable datasets; `stream` is currently WSS-only, so gRPC and `blocks` are not yet available in x402 mode. |
 | **Secure credential handling** | OS keychain storage, 4-tier credential resolution, full token redaction in logs |
 | **Interactive wizards** | Stream and backfill can run with step-by-step prompts for dataset selection, filters, output format, limits, and block ranges |
 
@@ -87,7 +87,7 @@ The CLI supports two connection modes. Pick the one that fits your setup:
 
 Pay per request with USDC on Base Sepolia — no Quicknode account required. You just need an EVM wallet private key with USDC balance.
 
-> **Limitation:** x402 currently supports WSS transport only. The `blocks` dataset and gRPC transport are not available in x402 mode — use Quicknode Direct for those.
+> **Current support:** x402 supports `backfill` for all backfillable datasets. For `stream`, x402 is currently WSS-only, so gRPC and the gRPC-only `blocks` dataset are not yet available. Use Quicknode Direct for those. See [Current limitations](#current-limitations) for a quick matrix.
 
 1. Run the interactive config and select **x402 Micropayments**:
    ```bash
@@ -144,7 +144,7 @@ hypercore-cli credits --help
 ### `config` — Credential management
 
 ```bash
-hypercore-cli config          # Interactive setup (choose Quicknode Direct or x402, then WSS or gRPC)
+hypercore-cli config          # Interactive setup (choose Quicknode Direct or x402; transport selection is available where supported)
 hypercore-cli config --show   # View saved config (secrets masked)
 hypercore-cli config --clear  # Remove all saved credentials
 ```
@@ -184,7 +184,7 @@ Check x402 credits without triggering a paid request:
 ```bash
 hypercore-cli credits
 hypercore-cli credits --json
-hypercore-cli credits --wallet-key 0x... --x402-url https://x402.quiknode-cf.pro
+hypercore-cli credits --wallet-key 0x... --x402-url https://x402.quicknode.com
 ```
 
 ### `sample` — Explore datasets before ingestion
@@ -449,7 +449,7 @@ hypercore-cli stream --dataset trades --output json --stdout | jq .coin
 
 ## Datasets
 
-| Dataset | Description | Stream | Backfill | x402 | Volume | Docs |
+| Dataset | Description | Stream | Backfill | x402 (stream) | Volume | Docs |
 |---|---|---|---|---|---|---|
 | `orders` | Order lifecycle — open, filled, canceled, rejected | WSS, gRPC | Yes | WSS only | Very High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/orders) |
 | `trades` | Executed fills with price, size, and fee details | WSS, gRPC | Yes | WSS only | High | [Docs](https://www.quicknode.com/docs/hyperliquid/datasets/trades) |
@@ -571,18 +571,6 @@ hypercore-cli stream --dataset trades --limit 20 --transport grpc
 ### x402 Micropayments
 
 Pay per request with USDC — no Quicknode account needed. The CLI authenticates with [SIWE](https://eips.ethereum.org/EIPS/eip-4361) (Sign-In with Ethereum), then uses the [x402 payment protocol](https://www.x402.org/) to automatically pay for API access with USDC.
-
-#### Current limitations
-
-| Feature | x402 support |
-|---|---|
-| WSS transport | Supported |
-| gRPC transport | Not yet supported |
-| `blocks` dataset | Not yet supported |
-| Historical backfill | Supported |
-| All other datasets | Supported |
-
-Use **Quicknode Direct** if you need gRPC transport or the `blocks` dataset.
 
 #### Supported payment chains
 
@@ -761,7 +749,7 @@ pnpm pack:dry-run   # Verify tarball contents before publish
 The CLI supports **dual transport** — WebSocket (default) and gRPC — for real-time streaming, with **JSON-RPC** for historical backfill. It also supports **dual connection mode** — Quicknode Direct (traditional API token) and x402 micropayments (USDC-based pay-per-request). Key architectural choices:
 
 - **Pluggable transport layer** — `stream` and `stats` accept `--transport wss` or `--transport grpc`; gRPC-only datasets (like `blocks`) auto-select gRPC
-- **Pluggable connection mode** — `--mode quicknode` or `--mode x402` with automatic detection based on available credentials; x402 currently supports WSS only
+- **Pluggable connection mode** — `--mode quicknode` or `--mode x402` with automatic detection based on available credentials; x402 currently supports WSS-only live streaming while keeping JSON-RPC backfill support
 - **Auto-reconnect with gap recovery** — on disconnect, the CLI backfills missed blocks via `hl_getBatchBlocks` before resuming the live stream
 - **x402 credit lifecycle** — automatic SIWE authentication, credit checking, on-chain payment, and JWT refresh
 - **Shared stream runtime** — `stream` and `stats` share the same reconnect/backfill pipeline, so reliability improvements apply everywhere
