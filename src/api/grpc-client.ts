@@ -172,15 +172,18 @@ export class GrpcStreamClient implements StreamTransport {
         }
       });
 
-      const coins = this.options.filters['coin'] ?? this.options.filters['coins'] ?? [];
-      const userAddresses = this.options.filters['user'] ?? this.options.filters['users'] ?? [];
+      const grpcFilters: Record<string, { values: string[] }> = {};
+      for (const [key, values] of Object.entries(this.options.filters)) {
+        if (values.length > 0) {
+          grpcFilters[key] = { values };
+        }
+      }
 
       stream.write({
         subscribe: {
           stream_type: DATASET_TO_STREAM_TYPE[this.options.dataset],
           start_block: 0,
-          coins,
-          user_addresses: userAddresses,
+          filters: grpcFilters,
         },
       });
       this.options.onInfo(

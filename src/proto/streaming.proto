@@ -21,8 +21,12 @@ message SubscribeRequest {
 message StreamSubscribe {
   StreamType stream_type = 1;
   uint64 start_block = 2;
-  repeated string user_addresses = 3;
-  repeated string coins = 4;
+  map<string, FilterValues> filters = 3;
+  string filter_name = 4;
+}
+
+message FilterValues {
+  repeated string values = 1;
 }
 
 message Ping { int64 timestamp = 1; }
