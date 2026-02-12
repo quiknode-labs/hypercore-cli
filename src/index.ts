@@ -9,13 +9,16 @@ import { registerStatsCommand } from './commands/stats';
 import { registerStreamCommand } from './commands/stream';
 import { redactSensitiveText } from './utils/url';
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { version } = require('../../package.json') as { version: string };
+
 export async function runCli(argv: string[] = process.argv): Promise<void> {
   const program = new Command();
 
   program
     .name('hypercore-cli')
     .description('Quicknode HyperCore streaming CLI')
-    .version('0.1.0');
+    .version(version);
 
   registerConfigCommand(program);
   registerCreditsCommand(program);

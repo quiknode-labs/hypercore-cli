@@ -44,7 +44,8 @@
     "bin",
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && cp -r src/proto dist/src/proto",
@@ -54,7 +55,8 @@
     "test:watch": "node --test --watch tests/**/*.test.mjs",
     "test:socket": "ENABLE_SOCKET_TESTS=1 node --test tests/integration/stream-runtime-reconnect.test.mjs",
     "perf:smoke": "pnpm -s build && node scripts/perf-smoke.mjs",
-    "pack:dry-run": "npm pack --dry-run --cache \"${TMPDIR:-/tmp}/hypercore-cli-npm-cache\""
+    "pack:dry-run": "npm pack --dry-run --cache \"${TMPDIR:-/tmp}/hypercore-cli-npm-cache\"",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.11.0",

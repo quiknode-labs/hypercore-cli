@@ -21,11 +21,11 @@ export function createX402Fetch(config: {
     if (input instanceof Request) {
       const request = input.clone();
       request.headers.set('Authorization', `Bearer ${jwt}`);
-      return fetch(request);
+      return fetch(request, { signal: AbortSignal.timeout(30_000) });
     }
     const headers = new Headers(init?.headers);
     headers.set('Authorization', `Bearer ${jwt}`);
-    return fetch(input, { ...init, headers });
+    return fetch(input, { ...init, headers, signal: AbortSignal.timeout(30_000) });
   };
 
   // Wrap with x402 payment handling

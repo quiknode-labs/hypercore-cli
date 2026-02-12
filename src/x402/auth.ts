@@ -48,6 +48,7 @@ export function createX402AuthManager(config: {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: messageText, signature }),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!response.ok) {

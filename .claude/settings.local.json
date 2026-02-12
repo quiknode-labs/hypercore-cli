@@ -4,7 +4,9 @@
       "Bash(pnpm typecheck:*)",
       "Bash(pnpm build:*)",
       "Bash(pnpm test:*)",
-      "Bash(node --test:*)"
+      "Bash(node --test:*)",
+      "Bash(git rm:*)",
+      "Bash(npm pack:*)"
     ]
   }
 }
