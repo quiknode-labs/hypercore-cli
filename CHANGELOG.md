@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-02-13)
+
+### Fixed
+
+- Move `better-sqlite3` and `keytar` to `optionalDependencies` so `npm install` succeeds even when native compilation fails (e.g., missing build tools or unsupported Node versions)
+
 ## 0.1.0 (2026-02-12)
 
 Initial public release.

@@ -1,6 +1,6 @@
 {
   "name": "@quicknode/hypercore-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Developer-friendly CLI for streaming and backfilling HyperCore datasets from Quicknode",
   "keywords": [
     "quicknode",
@@ -66,13 +66,15 @@
     "@grpc/proto-loader": "^0.8.0",
     "@x402/evm": "^2.3.0",
     "@x402/fetch": "^2.3.0",
-    "better-sqlite3": "^11.10.0",
     "commander": "^14.0.2",
-    "keytar": "^7.9.0",
     "siwe": "^2.3.2",
     "viem": "^2.30.0",
     "ws": "^8.18.3",
     "zod": "^3.25.76"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.10.0",
+    "keytar": "^7.9.0"
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.65.0",
